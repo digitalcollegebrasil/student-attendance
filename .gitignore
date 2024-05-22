@@ -1,4 +1,17 @@
 .env
+*.crdownload
+*.zip
+*.rar
+*.tar
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.tar.lz
+*.tar.lzma
+*.tar.lzo
+*.tar.zst
+*.tar.zstd
+*.7z
 2024*
 2025*
 2026*

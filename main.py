@@ -2,15 +2,14 @@ import os
 from dotenv import load_dotenv
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from selenium.common.exceptions import NoSuchWindowException, TimeoutException
+from selenium.common.exceptions import TimeoutException
 from datetime import datetime, timedelta
 import time
 import shutil
 
 load_dotenv()
 
+head_office = os.getenv("HEAD_OFFICE")
 email_address = os.getenv("SPONTE_EMAIL")
 password_value = os.getenv("SPONTE_PASSWORD")
 
@@ -44,8 +43,8 @@ prefs = {
 }
 chrome_options.add_experimental_option("prefs", prefs)
 
-start_date_range = datetime.strptime("02/02/2024", "%d/%m/%Y")
-end_date_range = datetime.strptime("19/05/2024", "%d/%m/%Y")
+start_date_range = datetime.strptime("18/05/2024", "%d/%m/%Y")
+end_date_range = datetime.strptime("20/05/2024", "%d/%m/%Y")
 
 current_date = start_date_range
 
@@ -66,8 +65,50 @@ while current_date <= end_date_range:
     time.sleep(5)
 
     enterprise = driver.find_element(By.ID, "ctl00_ctl00_spnNomeEmpresa").get_attribute("innerText").strip().replace(" ", "")
-    print(enterprise)
 
+    if head_office == "Aldeota":
+        if enterprise == "DIGITALCOLLEGESUL-74070":
+            empresas_button = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_liEmpresas")
+            empresas_button.click()
+            time.sleep(2)
+            aldeota_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_0")
+            aldeota_checkbox.click()
+            time.sleep(3)
+            sul_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_1")
+            sul_checkbox.click()
+            time.sleep(3)
+            ul_element = driver.find_element(By.CSS_SELECTOR, 'ul.nav.nav-pills')
+
+            li_elements = ul_element.find_elements(By.TAG_NAME, 'li')
+
+            if li_elements:
+                first_li = li_elements[0]
+                first_li.click()
+            else:
+                print("Nenhum elemento <li> encontrado.")
+            time.sleep(2)
+    elif head_office == "Sul":
+        if enterprise == "DIGITALCOLLEGEALDEOTA-72546":
+            empresas_button = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_liEmpresas")
+            empresas_button.click()
+            time.sleep(2)
+            aldeota_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_0")
+            aldeota_checkbox.click()
+            time.sleep(3)
+            sul_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_1")
+            sul_checkbox.click()
+            time.sleep(3)
+            ul_element = driver.find_element(By.CSS_SELECTOR, 'ul.nav.nav-pills')
+
+            li_elements = ul_element.find_elements(By.TAG_NAME, 'li')
+
+            if li_elements:
+                first_li = li_elements[0]
+                first_li.click()
+            else:
+                print("Nenhum elemento <li> encontrado.")
+            time.sleep(2)
+    
     status_dropdown = driver.find_element(By.ID, "select2-ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_cmbSituacaoTurma-container")
     status_dropdown.click()
 
@@ -100,9 +141,7 @@ while current_date <= end_date_range:
     time.sleep(1)
 
     try:
-        quantitative_report_checkbox = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_chkRelatorioQuantitativo"))
-        )
+        quantitative_report_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_chkRelatorioQuantitativo")
         quantitative_report_checkbox.click()
     except TimeoutException:
         print("Quantitative report checkbox not clickable")
@@ -111,9 +150,7 @@ while current_date <= end_date_range:
     time.sleep(1)
 
     try:
-        all_classes_checkbox = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_chkMarcarTurmas"))
-        )
+        all_classes_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_chkMarcarTurmas")
         all_classes_checkbox.click()
     except TimeoutException:
         print("All classes checkbox not clickable")
@@ -163,11 +200,9 @@ while current_date <= end_date_range:
     # time.sleep(1)
 
     try:
-        generate_button = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.ID, "ctl00_ctl00_ContentPlaceHolder1_btnGerar_div"))
-        )
+        generate_button = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_btnGerar_div")
         generate_button.click()
-        time.sleep(5)
+        time.sleep(8)
         print(f"Downloaded PDF for {current_date.strftime('%d/%m/%Y')}")
 
         target_dir = os.path.join(base_target_dir, current_date.strftime('%Y-%m-%d'))
@@ -177,9 +212,10 @@ while current_date <= end_date_range:
         move_downloaded_file(download_dir, target_dir, current_date)
 
         driver.close()
-
     except TimeoutException:
         print("Generate button not clickable")
+        driver.quit()
+        continue
     
     time.sleep(3)
     driver.quit()
