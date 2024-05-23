@@ -43,7 +43,7 @@ prefs = {
 }
 chrome_options.add_experimental_option("prefs", prefs)
 
-start_date_range = datetime.strptime("20/05/2024", "%d/%m/%Y")
+start_date_range = datetime.strptime("24/03/2024", "%d/%m/%Y")
 end_date_range = datetime.strptime("20/05/2024", "%d/%m/%Y")
 
 current_date = start_date_range
@@ -51,7 +51,7 @@ current_date = start_date_range
 while current_date <= end_date_range:
     day_of_week = get_day_of_week(current_date)
 
-    if day_of_week == "Sunday":
+    if day_of_week in ["Friday", "Saturday", "Sunday"]:
         current_date += timedelta(days=1)
         continue
 
