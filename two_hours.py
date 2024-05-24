@@ -43,7 +43,7 @@ prefs = {
 }
 chrome_options.add_experimental_option("prefs", prefs)
 
-start_date_range = datetime.strptime("24/03/2024", "%d/%m/%Y")
+start_date_range = datetime.strptime("07/02/2024", "%d/%m/%Y")
 end_date_range = datetime.strptime("20/05/2024", "%d/%m/%Y")
 
 current_date = start_date_range
@@ -155,13 +155,41 @@ while current_date <= end_date_range:
     time.sleep(1)
 
     try:
-        all_classes_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_chkMarcarTurmas")
-        all_classes_checkbox.click()
+        number_of_faults = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_txtNroFaltasConsecutivas")
+        remove_value_attribute(driver, number_of_faults)
+        set_input_value(driver, number_of_faults, "2")
     except TimeoutException:
-        print("All classes checkbox not clickable")
+        print("Number of faults not clickable")
         driver.quit()
         continue
-    time.sleep(3)
+    time.sleep(1)
+
+    try:
+        fsl_01 = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_cblTurmas_30")
+        fsl_01.click()
+    except TimeoutException:
+        print("FSL 01 not clickable")
+        driver.quit()
+        continue
+    time.sleep(1)
+
+    try:
+        fsl_02 = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_cblTurmas_31")
+        fsl_02.click()
+    except TimeoutException:
+        print("FSL 02 not clickable")
+        driver.quit()
+        continue
+    time.sleep(1)
+
+    try:
+        fsl_03 = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_cblTurmas_32")
+        fsl_03.click()
+    except TimeoutException:
+        print("FSL 03 not clickable")
+        driver.quit()
+        continue
+    time.sleep(1)
 
     start_date = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_wcdDataInicioFaltasCons_txtData")
     remove_value_attribute(driver, start_date)
