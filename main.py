@@ -2,6 +2,8 @@ import os
 from dotenv import load_dotenv
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from datetime import datetime, timedelta
 import time
@@ -13,8 +15,10 @@ head_office = os.getenv("HEAD_OFFICE")
 email_address = os.getenv("SPONTE_EMAIL")
 password_value = os.getenv("SPONTE_PASSWORD")
 
-download_dir = "C:\\Users\\Cauan\\Downloads\\projetos\\student-attendance"
-base_target_dir = "C:\\Users\\Cauan\\Downloads\\projetos\\student-attendance"
+current_dir = os.path.dirname(__file__)
+
+download_dir = current_dir
+base_target_dir = current_dir
 
 def remove_value_attribute(driver, element):
     driver.execute_script("arguments[0].removeAttribute('value')", element)
@@ -43,10 +47,14 @@ prefs = {
 }
 chrome_options.add_experimental_option("prefs", prefs)
 
-start_date_range = datetime.strptime("20/05/2024", "%d/%m/%Y")
-end_date_range = datetime.strptime("20/05/2024", "%d/%m/%Y")
+start_date_range = datetime.strptime("17/06/2024", "%d/%m/%Y")
+end_date_range = datetime.strptime("22/06/2024", "%d/%m/%Y")
 
 current_date = start_date_range
+
+def click_element(driver, element):
+    driver.execute_script("arguments[0].scrollIntoView();", element)
+    driver.execute_script("arguments[0].click();", element)
 
 while current_date <= end_date_range:
     day_of_week = get_day_of_week(current_date)
@@ -146,8 +154,10 @@ while current_date <= end_date_range:
     time.sleep(1)
 
     try:
-        quantitative_report_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_chkRelatorioQuantitativo")
-        quantitative_report_checkbox.click()
+        quantitative_report_checkbox = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_chkRelatorioQuantitativo"))
+        )
+        click_element(driver, quantitative_report_checkbox)
     except TimeoutException:
         print("Quantitative report checkbox not clickable")
         driver.quit()
@@ -155,8 +165,10 @@ while current_date <= end_date_range:
     time.sleep(1)
 
     try:
-        all_classes_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_chkMarcarTurmas")
-        all_classes_checkbox.click()
+        all_classes_checkbox = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_chkMarcarTurmas"))
+        )
+        click_element(driver, all_classes_checkbox)
     except TimeoutException:
         print("All classes checkbox not clickable")
         driver.quit()
@@ -172,51 +184,43 @@ while current_date <= end_date_range:
     set_input_value(driver, end_date, current_date.strftime("%d/%m/%Y"))
 
     try:
-        export_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_chkExportar")
-        export_checkbox.click()
+        export_checkbox = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.ID, "ctl00_ctl00_ContentPlaceHolder1_chkExportar"))
+        )
+        click_element(driver, export_checkbox)
     except TimeoutException:
         print("Export checkbox not clickable")
         driver.quit()
         continue
     time.sleep(1)
 
-    try:
-        export_select = driver.find_element(By.ID, "select2-ctl00_ctl00_ContentPlaceHolder1_cmbTipoExportacao-container")
-        export_select.click()
-    except TimeoutException:
-        print("Export select not clickable")
-        driver.quit()
-        continue
+    select2_span = WebDriverWait(driver, 10).until(
+        EC.element_to_be_clickable((By.CSS_SELECTOR, ".select2-selection__rendered"))
+    )
+    select2_span.click()
+    time.sleep(1)
+
+    option = WebDriverWait(driver, 10).until(
+        EC.element_to_be_clickable((By.XPATH, "//*[text()='Excel Sem Formatação']"))
+    )
+    option.click()
     time.sleep(1)
 
     try:
-        export_option = driver.find_element(By.XPATH, "//*[text()='Excel Sem Formatação']")
-        export_option.click()
-    except TimeoutException:
-        print("Export option not clickable")
-        driver.quit()
-        continue
-    time.sleep(1)
-
-    try:
-        generate_button = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_btnGerar_div")
-        generate_button.click()
-        time.sleep(8)
-        print(f"Downloaded XLS for {current_date.strftime('%d/%m/%Y')}")
-
-        target_dir = os.path.join(base_target_dir, current_date.strftime('%Y-%m-%d'))
-        if not os.path.exists(target_dir):
-            os.makedirs(target_dir)
-
-        move_downloaded_file(download_dir, target_dir, current_date)
-
-        driver.close()
+        generate_button = WebDriverWait(driver, 10).until(
+            EC.element_to_be_clickable((By.ID, "ctl00_ctl00_ContentPlaceHolder1_btnGerar_div"))
+        )
+        click_element(driver, generate_button)
     except TimeoutException:
         print("Generate button not clickable")
         driver.quit()
         continue
-    
-    time.sleep(3)
+    time.sleep(5)
+
+    move_downloaded_file(download_dir, base_target_dir, current_date)
+
     driver.quit()
 
     current_date += timedelta(days=1)
+
+print("Download process completed.")
