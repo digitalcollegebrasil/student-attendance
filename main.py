@@ -47,8 +47,8 @@ prefs = {
 }
 chrome_options.add_experimental_option("prefs", prefs)
 
-start_date_range = datetime.strptime("17/06/2024", "%d/%m/%Y")
-end_date_range = datetime.strptime("22/06/2024", "%d/%m/%Y")
+start_date_range = datetime.strptime("29/06/2024", "%d/%m/%Y")
+end_date_range = datetime.strptime("30/06/2024", "%d/%m/%Y")
 
 current_date = start_date_range
 

@@ -2,6 +2,8 @@ import os
 from dotenv import load_dotenv
 from selenium import webdriver
 from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from datetime import datetime, timedelta
 import time
@@ -13,8 +15,10 @@ head_office = os.getenv("HEAD_OFFICE")
 email_address = os.getenv("SPONTE_EMAIL")
 password_value = os.getenv("SPONTE_PASSWORD")
 
-download_dir = "C:\\Users\\Cauan\\Downloads\\projetos\\student-attendance"
-base_target_dir = "C:\\Users\\Cauan\\Downloads\\projetos\\student-attendance"
+current_dir = os.path.dirname(__file__)
+
+download_dir = current_dir
+base_target_dir = current_dir
 
 def remove_value_attribute(driver, element):
     driver.execute_script("arguments[0].removeAttribute('value')", element)
