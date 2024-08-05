@@ -1,4 +1,7 @@
 import os
+import time
+import shutil
+import pandas as pd
 from dotenv import load_dotenv
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -6,20 +9,25 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from datetime import datetime, timedelta
-import time
-import shutil
 
+# Carrega variáveis de ambiente
 load_dotenv()
 
 head_office = os.getenv("HEAD_OFFICE")
 email_address = os.getenv("SPONTE_EMAIL")
 password_value = os.getenv("SPONTE_PASSWORD")
 
+# Configuração de diretórios
 current_dir = os.path.dirname(__file__)
+download_dir = os.path.join(current_dir, 'downloads')
+base_target_dir = os.path.join(current_dir, 'target')
 
-download_dir = current_dir
-base_target_dir = current_dir
+if not os.path.exists(download_dir):
+    os.makedirs(download_dir)
+if not os.path.exists(base_target_dir):
+    os.makedirs(base_target_dir)
 
+# Funções auxiliares
 def remove_value_attribute(driver, element):
     driver.execute_script("arguments[0].removeAttribute('value')", element)
 
@@ -27,8 +35,7 @@ def set_input_value(driver, element, value):
     driver.execute_script("arguments[0].value = arguments[1]", element, value)
 
 def get_day_of_week(date):
-    day_of_week = date.strftime("%A")
-    return day_of_week
+    return date.strftime("%A")
 
 def move_downloaded_file(download_dir, target_dir, current_date):
     filename = f"Relatorio_{current_date.strftime('%d_%m_%Y')}.xls"
@@ -39,6 +46,7 @@ def move_downloaded_file(download_dir, target_dir, current_date):
         shutil.move(os.path.join(download_dir, latest_file), target_path)
         print(f"Moved XLS for {current_date.strftime('%d/%m/%Y')} to {target_path}")
 
+# Configurações do navegador
 chrome_options = webdriver.ChromeOptions()
 prefs = {
     "download.default_directory": download_dir,
@@ -47,14 +55,18 @@ prefs = {
 }
 chrome_options.add_experimental_option("prefs", prefs)
 
-start_date_range = datetime.strptime("29/06/2024", "%d/%m/%Y")
-end_date_range = datetime.strptime("30/06/2024", "%d/%m/%Y")
+# Datas de início e fim
+start_date_range = datetime.strptime("29/07/2024", "%d/%m/%Y")
+end_date_range = datetime.strptime("03/08/2024", "%d/%m/%Y")
 
 current_date = start_date_range
 
+# Função para clicar em um elemento
 def click_element(driver, element):
     driver.execute_script("arguments[0].scrollIntoView();", element)
     driver.execute_script("arguments[0].click();", element)
+
+combined_data = []
 
 while current_date <= end_date_range:
     day_of_week = get_day_of_week(current_date)
@@ -218,9 +230,45 @@ while current_date <= end_date_range:
     time.sleep(5)
 
     move_downloaded_file(download_dir, base_target_dir, current_date)
+    
+    xls_file_path = os.path.join(base_target_dir, f"Relatorio_{current_date.strftime('%d_%m_%Y')}.xls")
+
+    # Ler o arquivo XLS diretamente
+    data = pd.read_excel(xls_file_path, skiprows=3)
+
+    # Mapeamento dos nomes das colunas que você deseja
+    column_mapping = {
+        'Nome': 'Nome',
+        'Professor': 'Professor',
+        'Vagas': 'Vagas',
+        'Integrantes': 'Integrantes',
+        'Trancados': 'Trancados',
+        'Horário': 'Horario',
+        'Não Frequentes': 'NaoFrequente',
+        'Frequentes': 'Frequente',
+        'Dias da Semana': 'DiasSemana'
+    }
+
+    # Selecionar as colunas usando o mapeamento
+    selected_columns = {}
+    for desired, real in column_mapping.items():
+        if real in data.columns:
+            selected_columns[desired] = data[real]
+
+    # Adiciona as colunas "Data" e "Sede"
+    selected_columns_df = pd.DataFrame(selected_columns)
+    selected_columns_df['Data'] = current_date.strftime("%d/%m/%Y")
+    selected_columns_df['Sede'] = head_office
+
+    combined_data.append(selected_columns_df)
 
     driver.quit()
 
     current_date += timedelta(days=1)
 
 print("Download process completed.")
+
+final_df = pd.concat(combined_data)
+final_output_path = os.path.join(current_dir, 'combined_data.xlsx')
+final_df.to_excel(final_output_path, index=False)
+print(f"Combined data saved to {final_output_path}")
