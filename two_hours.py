@@ -187,16 +187,7 @@ while current_date <= end_date_range:
     time.sleep(1)
 
     try:
-        fsl_01 = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_cblTurmas_30")
-        fsl_01.click()
-    except TimeoutException:
-        print("FSL 01 not clickable")
-        driver.quit()
-        continue
-    time.sleep(1)
-
-    try:
-        fsl_02 = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_cblTurmas_31")
+        fsl_02 = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_cblTurmas_30")
         fsl_02.click()
     except TimeoutException:
         print("FSL 02 not clickable")
@@ -205,7 +196,7 @@ while current_date <= end_date_range:
     time.sleep(1)
 
     try:
-        fsl_03 = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_cblTurmas_32")
+        fsl_03 = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_cblTurmas_31")
         fsl_03.click()
     except TimeoutException:
         print("FSL 03 not clickable")
@@ -214,7 +205,7 @@ while current_date <= end_date_range:
     time.sleep(1)
 
     try:
-        fsl_04 = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_cblTurmas_33")
+        fsl_04 = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_cblTurmas_32")
         fsl_04.click()
     except TimeoutException:
         print("FSL 04 not clickable")
