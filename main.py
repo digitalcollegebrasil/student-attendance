@@ -56,8 +56,8 @@ prefs = {
 chrome_options.add_experimental_option("prefs", prefs)
 
 # Datas de início e fim
-start_date_range = datetime.strptime("29/07/2024", "%d/%m/%Y")
-end_date_range = datetime.strptime("03/08/2024", "%d/%m/%Y")
+start_date_range = datetime.strptime("05/08/2024", "%d/%m/%Y")
+end_date_range = datetime.strptime("10/08/2024", "%d/%m/%Y")
 
 current_date = start_date_range
 
@@ -69,201 +69,209 @@ def click_element(driver, element):
 combined_data = []
 
 while current_date <= end_date_range:
-    day_of_week = get_day_of_week(current_date)
+    success = False
+    while not success:
+        try:
+            day_of_week = get_day_of_week(current_date)
 
-    if day_of_week == "Sunday":
-        current_date += timedelta(days=1)
-        continue
+            if day_of_week == "Sunday":
+                current_date += timedelta(days=1)
+                continue
 
-    print(f"Processing date: {current_date.strftime('%d/%m/%Y')} - {day_of_week}")
+            print(f"Processing date: {current_date.strftime('%d/%m/%Y')} - {day_of_week}")
 
-    driver = webdriver.Chrome(options=chrome_options)
-    driver.get("https://www.sponteeducacional.net.br/SPRel/Didatico/Turmas.aspx")
-    
-    email = driver.find_element(By.ID, "txtLogin")
-    email.send_keys(email_address)
-    password = driver.find_element(By.ID, "txtSenha")
-    password.send_keys(password_value)
+            driver = webdriver.Chrome(options=chrome_options)
+            driver.get("https://www.sponteeducacional.net.br/SPRel/Didatico/Turmas.aspx")
+            
+            email = driver.find_element(By.ID, "txtLogin")
+            email.send_keys(email_address)
+            password = driver.find_element(By.ID, "txtSenha")
+            password.send_keys(password_value)
 
-    login_button = driver.find_element(By.ID, "btnok")
-    login_button.click()
-    time.sleep(5)
+            login_button = driver.find_element(By.ID, "btnok")
+            login_button.click()
+            time.sleep(5)
 
-    enterprise = driver.find_element(By.ID, "ctl00_ctl00_spnNomeEmpresa").get_attribute("innerText").strip().replace(" ", "")
+            enterprise = driver.find_element(By.ID, "ctl00_ctl00_spnNomeEmpresa").get_attribute("innerText").strip().replace(" ", "")
 
-    if head_office == "Aldeota":
-        if enterprise == "DIGITALCOLLEGESUL-74070":
-            empresas_button = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_liEmpresas")
-            empresas_button.click()
-            time.sleep(2)
-            aldeota_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_0")
-            aldeota_checkbox.click()
+            if head_office == "Aldeota":
+                if enterprise == "DIGITALCOLLEGESUL-74070":
+                    empresas_button = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_liEmpresas")
+                    empresas_button.click()
+                    time.sleep(2)
+                    aldeota_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_0")
+                    aldeota_checkbox.click()
+                    time.sleep(3)
+                    sul_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_1")
+                    sul_checkbox.click()
+                    time.sleep(3)
+                    ul_element = driver.find_element(By.CSS_SELECTOR, 'ul.nav.nav-pills')
+
+                    li_elements = ul_element.find_elements(By.TAG_NAME, 'li')
+
+                    if li_elements:
+                        first_li = li_elements[0]
+                        first_li.click()
+                    else:
+                        print("Nenhum elemento <li> encontrado.")
+                    time.sleep(2)
+            elif head_office == "Sul":
+                if enterprise == "DIGITALCOLLEGEALDEOTA-72546":
+                    empresas_button = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_liEmpresas")
+                    empresas_button.click()
+                    time.sleep(2)
+                    aldeota_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_0")
+                    aldeota_checkbox.click()
+                    time.sleep(3)
+                    sul_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_1")
+                    sul_checkbox.click()
+                    time.sleep(3)
+                    ul_element = driver.find_element(By.CSS_SELECTOR, 'ul.nav.nav-pills')
+
+                    li_elements = ul_element.find_elements(By.TAG_NAME, 'li')
+
+                    if li_elements:
+                        first_li = li_elements[0]
+                        first_li.click()
+                    else:
+                        print("Nenhum elemento <li> encontrado.")
+                    time.sleep(2)
+            
+            status_dropdown = driver.find_element(By.ID, "select2-ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_cmbSituacaoTurma-container")
+            status_dropdown.click()
+
+            active_status = driver.find_element(By.XPATH, "//*[text()='Vigente']")
+            active_status.click()
+            time.sleep(5)
+
+            day_of_week_select = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_divDiaSemana")
+            day_of_week_select.click()
+            time.sleep(1)
+
+            day_of_week_box = None
+            if day_of_week == "Monday":
+                day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Segunda-Feira']")
+            elif day_of_week == "Tuesday":
+                day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Terça-Feira']")
+            elif day_of_week == "Wednesday":
+                day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Quarta-Feira']")
+            elif day_of_week == "Thursday":
+                day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Quinta-Feira']")
+            elif day_of_week == "Friday":
+                day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Sexta-Feira']")
+            elif day_of_week == "Saturday":
+                day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Sábado']")
+            elif day_of_week == "Sunday":
+                day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Domingo']")
+            
+            if day_of_week_box:
+                day_of_week_box.click()
+            time.sleep(1)
+
+            try:
+                quantitative_report_checkbox = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_chkRelatorioQuantitativo"))
+                )
+                click_element(driver, quantitative_report_checkbox)
+            except TimeoutException:
+                print("Quantitative report checkbox not clickable")
+                driver.quit()
+                continue
+            time.sleep(1)
+
+            try:
+                all_classes_checkbox = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_chkMarcarTurmas"))
+                )
+                click_element(driver, all_classes_checkbox)
+            except TimeoutException:
+                print("All classes checkbox not clickable")
+                driver.quit()
+                continue
             time.sleep(3)
-            sul_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_1")
-            sul_checkbox.click()
-            time.sleep(3)
-            ul_element = driver.find_element(By.CSS_SELECTOR, 'ul.nav.nav-pills')
 
-            li_elements = ul_element.find_elements(By.TAG_NAME, 'li')
+            start_date = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_wcdDataInicioFaltasCons_txtData")
+            remove_value_attribute(driver, start_date)
+            set_input_value(driver, start_date, current_date.strftime("%d/%m/%Y"))
 
-            if li_elements:
-                first_li = li_elements[0]
-                first_li.click()
-            else:
-                print("Nenhum elemento <li> encontrado.")
-            time.sleep(2)
-    elif head_office == "Sul":
-        if enterprise == "DIGITALCOLLEGEALDEOTA-72546":
-            empresas_button = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_liEmpresas")
-            empresas_button.click()
-            time.sleep(2)
-            aldeota_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_0")
-            aldeota_checkbox.click()
-            time.sleep(3)
-            sul_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_1")
-            sul_checkbox.click()
-            time.sleep(3)
-            ul_element = driver.find_element(By.CSS_SELECTOR, 'ul.nav.nav-pills')
+            end_date = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_wcdDataTerminoFaltasCons_txtData")
+            remove_value_attribute(driver, end_date)
+            set_input_value(driver, end_date, current_date.strftime("%d/%m/%Y"))
 
-            li_elements = ul_element.find_elements(By.TAG_NAME, 'li')
+            try:
+                export_checkbox = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.ID, "ctl00_ctl00_ContentPlaceHolder1_chkExportar"))
+                )
+                click_element(driver, export_checkbox)
+            except TimeoutException:
+                print("Export checkbox not clickable")
+                driver.quit()
+                continue
+            time.sleep(1)
 
-            if li_elements:
-                first_li = li_elements[0]
-                first_li.click()
-            else:
-                print("Nenhum elemento <li> encontrado.")
-            time.sleep(2)
-    
-    status_dropdown = driver.find_element(By.ID, "select2-ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_cmbSituacaoTurma-container")
-    status_dropdown.click()
+            select2_span = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, ".select2-selection__rendered"))
+            )
+            select2_span.click()
+            time.sleep(1)
 
-    active_status = driver.find_element(By.XPATH, "//*[text()='Vigente']")
-    active_status.click()
-    time.sleep(5)
+            option = WebDriverWait(driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, "//*[text()='Excel Sem Formatação']"))
+            )
+            option.click()
+            time.sleep(1)
 
-    day_of_week_select = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_divDiaSemana")
-    day_of_week_select.click()
-    time.sleep(1)
+            try:
+                generate_button = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.ID, "ctl00_ctl00_ContentPlaceHolder1_btnGerar_div"))
+                )
+                click_element(driver, generate_button)
+            except TimeoutException:
+                print("Generate button not clickable")
+                driver.quit()
+                continue
+            time.sleep(5)
 
-    day_of_week_box = None
-    if day_of_week == "Monday":
-        day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Segunda-Feira']")
-    elif day_of_week == "Tuesday":
-        day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Terça-Feira']")
-    elif day_of_week == "Wednesday":
-        day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Quarta-Feira']")
-    elif day_of_week == "Thursday":
-        day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Quinta-Feira']")
-    elif day_of_week == "Friday":
-        day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Sexta-Feira']")
-    elif day_of_week == "Saturday":
-        day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Sábado']")
-    elif day_of_week == "Sunday":
-        day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Domingo']")
-    
-    if day_of_week_box:
-        day_of_week_box.click()
-    time.sleep(1)
+            move_downloaded_file(download_dir, base_target_dir, current_date)
+            
+            xls_file_path = os.path.join(base_target_dir, f"Relatorio_{current_date.strftime('%d_%m_%Y')}.xls")
 
-    try:
-        quantitative_report_checkbox = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_chkRelatorioQuantitativo"))
-        )
-        click_element(driver, quantitative_report_checkbox)
-    except TimeoutException:
-        print("Quantitative report checkbox not clickable")
-        driver.quit()
-        continue
-    time.sleep(1)
+            # Ler o arquivo XLS diretamente
+            data = pd.read_excel(xls_file_path, skiprows=3)
 
-    try:
-        all_classes_checkbox = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_chkMarcarTurmas"))
-        )
-        click_element(driver, all_classes_checkbox)
-    except TimeoutException:
-        print("All classes checkbox not clickable")
-        driver.quit()
-        continue
-    time.sleep(3)
+            # Mapeamento dos nomes das colunas que você deseja
+            column_mapping = {
+                'Nome': 'Nome',
+                'Professor': 'Professor',
+                'Vagas': 'Vagas',
+                'Integrantes': 'Integrantes',
+                'Trancados': 'Trancados',
+                'Horário': 'Horario',
+                'Não Frequentes': 'NaoFrequente',
+                'Frequentes': 'Frequente',
+                'Dias da Semana': 'DiasSemana'
+            }
 
-    start_date = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_wcdDataInicioFaltasCons_txtData")
-    remove_value_attribute(driver, start_date)
-    set_input_value(driver, start_date, current_date.strftime("%d/%m/%Y"))
+            # Selecionar as colunas usando o mapeamento
+            selected_columns = {}
+            for desired, real in column_mapping.items():
+                if real in data.columns:
+                    selected_columns[desired] = data[real]
 
-    end_date = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_wcdDataTerminoFaltasCons_txtData")
-    remove_value_attribute(driver, end_date)
-    set_input_value(driver, end_date, current_date.strftime("%d/%m/%Y"))
+            # Adiciona as colunas "Data" e "Sede"
+            selected_columns_df = pd.DataFrame(selected_columns)
+            selected_columns_df['Data'] = current_date.strftime("%d/%m/%Y")
+            selected_columns_df['Sede'] = head_office
 
-    try:
-        export_checkbox = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.ID, "ctl00_ctl00_ContentPlaceHolder1_chkExportar"))
-        )
-        click_element(driver, export_checkbox)
-    except TimeoutException:
-        print("Export checkbox not clickable")
-        driver.quit()
-        continue
-    time.sleep(1)
+            combined_data.append(selected_columns_df)
 
-    select2_span = WebDriverWait(driver, 10).until(
-        EC.element_to_be_clickable((By.CSS_SELECTOR, ".select2-selection__rendered"))
-    )
-    select2_span.click()
-    time.sleep(1)
+            driver.quit()
 
-    option = WebDriverWait(driver, 10).until(
-        EC.element_to_be_clickable((By.XPATH, "//*[text()='Excel Sem Formatação']"))
-    )
-    option.click()
-    time.sleep(1)
-
-    try:
-        generate_button = WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.ID, "ctl00_ctl00_ContentPlaceHolder1_btnGerar_div"))
-        )
-        click_element(driver, generate_button)
-    except TimeoutException:
-        print("Generate button not clickable")
-        driver.quit()
-        continue
-    time.sleep(5)
-
-    move_downloaded_file(download_dir, base_target_dir, current_date)
-    
-    xls_file_path = os.path.join(base_target_dir, f"Relatorio_{current_date.strftime('%d_%m_%Y')}.xls")
-
-    # Ler o arquivo XLS diretamente
-    data = pd.read_excel(xls_file_path, skiprows=3)
-
-    # Mapeamento dos nomes das colunas que você deseja
-    column_mapping = {
-        'Nome': 'Nome',
-        'Professor': 'Professor',
-        'Vagas': 'Vagas',
-        'Integrantes': 'Integrantes',
-        'Trancados': 'Trancados',
-        'Horário': 'Horario',
-        'Não Frequentes': 'NaoFrequente',
-        'Frequentes': 'Frequente',
-        'Dias da Semana': 'DiasSemana'
-    }
-
-    # Selecionar as colunas usando o mapeamento
-    selected_columns = {}
-    for desired, real in column_mapping.items():
-        if real in data.columns:
-            selected_columns[desired] = data[real]
-
-    # Adiciona as colunas "Data" e "Sede"
-    selected_columns_df = pd.DataFrame(selected_columns)
-    selected_columns_df['Data'] = current_date.strftime("%d/%m/%Y")
-    selected_columns_df['Sede'] = head_office
-
-    combined_data.append(selected_columns_df)
-
-    driver.quit()
-
+            success = True
+        except Exception as e:
+            print(f"Erro ao processar a data {current_date.strftime('%d/%m/%Y')}: {str(e)}")
+            driver.quit()
+        
     current_date += timedelta(days=1)
 
 print("Download process completed.")
