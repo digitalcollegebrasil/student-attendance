@@ -10,14 +10,12 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from datetime import datetime, timedelta
 
-# Carrega variáveis de ambiente
 load_dotenv()
 
 head_office = os.getenv("HEAD_OFFICE")
 email_address = os.getenv("SPONTE_EMAIL")
 password_value = os.getenv("SPONTE_PASSWORD")
 
-# Configuração de diretórios
 current_dir = os.path.dirname(__file__)
 download_dir = os.path.join(current_dir, 'downloads')
 base_target_dir = os.path.join(current_dir, 'target')
@@ -27,7 +25,6 @@ if not os.path.exists(download_dir):
 if not os.path.exists(base_target_dir):
     os.makedirs(base_target_dir)
 
-# Funções auxiliares
 def remove_value_attribute(driver, element):
     driver.execute_script("arguments[0].removeAttribute('value')", element)
 
@@ -46,7 +43,6 @@ def move_downloaded_file(download_dir, target_dir, current_date):
         shutil.move(os.path.join(download_dir, latest_file), target_path)
         print(f"Moved XLS for {current_date.strftime('%d/%m/%Y')} to {target_path}")
 
-# Configurações do navegador
 chrome_options = webdriver.ChromeOptions()
 prefs = {
     "download.default_directory": download_dir,
@@ -55,13 +51,11 @@ prefs = {
 }
 chrome_options.add_experimental_option("prefs", prefs)
 
-# Datas de início e fim
-start_date_range = datetime.strptime("27/08/2024", "%d/%m/%Y")
-end_date_range = datetime.strptime("27/08/2024", "%d/%m/%Y")
+start_date_range = datetime.strptime("01/09/2024", "%d/%m/%Y")
+end_date_range = datetime.strptime("07/12/2024", "%d/%m/%Y")
 
 current_date = start_date_range
 
-# Função para clicar em um elemento
 def click_element(driver, element):
     driver.execute_script("arguments[0].scrollIntoView();", element)
     driver.execute_script("arguments[0].click();", element)
@@ -92,53 +86,90 @@ while current_date <= end_date_range:
             login_button.click()
             time.sleep(5)
 
+            print(head_office)
             enterprise = driver.find_element(By.ID, "ctl00_ctl00_spnNomeEmpresa").get_attribute("innerText").strip().replace(" ", "")
+            print(enterprise)
+            
+            combinacoes = {
+                ("Aldeota", "DIGITALCOLLEGESUL-74070"): (1, "Acessando a sede Aldeota."),
+                ("Aldeota", "DIGITALCOLLEGEBEZERRADEMENEZES-488365"): (1, "Acessando a sede Aldeota."),
+                ("Sul", "DIGITALCOLLEGEALDEOTA-72546"): (3, "Acessando a sede Sul."),
+                ("Sul", "DIGITALCOLLEGEBEZERRADEMENEZES-488365"): (3, "Acessando a sede Sul."),
+                ("Bezerra", "DIGITALCOLLEGEALDEOTA-72546"): (4, "Acessando a sede Bezerra."),
+                ("Bezerra", "DIGITALCOLLEGESUL-74070"): (4, "Acessando a sede Bezerra."),
+                ("Aldeota", "DIGITALCOLLEGEALDEOTA-72546"): (None, "O script já está na Aldeota."),
+                ("Sul", "DIGITALCOLLEGESUL-74070"): (None, "O script já está no Sul."),
+                ("Bezerra", "DIGITALCOLLEGEBEZERRADEMENEZES-488365"): (None, "O script já está na Bezerra."),
+            }
+
+            resultado = combinacoes.get((head_office, enterprise), (None, "Ação não realizada: combinação não reconhecida."))
+            val, message = resultado
+
+            print(message)
+
+            # if val is not None:
+            #     driver.execute_script(f"$('#ctl00_hdnEmpresa').val({val});javascript:__doPostBack('ctl00$lnkChange','');")
+            #     time.sleep(3)
 
             if head_office == "Aldeota":
-                if enterprise == "DIGITALCOLLEGESUL-74070":
-                    empresas_button = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_liEmpresas")
-                    empresas_button.click()
-                    time.sleep(2)
-                    aldeota_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_0")
-                    aldeota_checkbox.click()
-                    time.sleep(3)
-                    sul_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_1")
-                    sul_checkbox.click()
-                    time.sleep(3)
-                    ul_element = driver.find_element(By.CSS_SELECTOR, 'ul.nav.nav-pills')
-
-                    li_elements = ul_element.find_elements(By.TAG_NAME, 'li')
-
-                    if li_elements:
-                        first_li = li_elements[0]
-                        first_li.click()
-                    else:
-                        print("Nenhum elemento <li> encontrado.")
-                    time.sleep(2)
+                empresas_button = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_liEmpresas")
+                empresas_button.click()
+                time.sleep(2)
+                ul_element = driver.find_element(By.CSS_SELECTOR, 'ul.nav.nav-pills')
+                li_elements = ul_element.find_elements(By.TAG_NAME, 'li')
+                if li_elements:
+                    first_li = li_elements[0]
+                    first_li.click()
+                else:
+                    print("Nenhum elemento <li> encontrado.")
+                time.sleep(2)
             elif head_office == "Sul":
-                if enterprise == "DIGITALCOLLEGEALDEOTA-72546":
-                    empresas_button = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_liEmpresas")
-                    empresas_button.click()
-                    time.sleep(2)
-                    aldeota_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_0")
-                    aldeota_checkbox.click()
-                    time.sleep(3)
-                    sul_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_1")
-                    sul_checkbox.click()
-                    time.sleep(3)
-                    ul_element = driver.find_element(By.CSS_SELECTOR, 'ul.nav.nav-pills')
-
-                    li_elements = ul_element.find_elements(By.TAG_NAME, 'li')
-
-                    if li_elements:
-                        first_li = li_elements[0]
-                        first_li.click()
-                    else:
-                        print("Nenhum elemento <li> encontrado.")
-                    time.sleep(2)
+                empresas_button = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_liEmpresas")
+                empresas_button.click()
+                time.sleep(2)
+                aldeota_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_0")
+                aldeota_checkbox.click()
+                time.sleep(3)
+                sul_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_1")
+                sul_checkbox.click()
+                time.sleep(3)
+                ul_element = driver.find_element(By.CSS_SELECTOR, 'ul.nav.nav-pills')
+                li_elements = ul_element.find_elements(By.TAG_NAME, 'li')
+                if li_elements:
+                    first_li = li_elements[0]
+                    first_li.click()
+                else:
+                    print("Nenhum elemento <li> encontrado.")
+                time.sleep(2)
+            elif head_office == "Bezerra":
+                empresas_button = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_liEmpresas")
+                empresas_button.click()
+                time.sleep(2)
+                aldeota_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_0")
+                aldeota_checkbox.click()
+                time.sleep(3)
+                bezerra_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_2")
+                bezerra_checkbox.click()
+                time.sleep(3)
+                ul_element = driver.find_element(By.CSS_SELECTOR, 'ul.nav.nav-pills')
+                li_elements = ul_element.find_elements(By.TAG_NAME, 'li')
+                if li_elements:
+                    first_li = li_elements[0]
+                    first_li.click()
+                else:
+                    print("Nenhum elemento <li> encontrado.")
+                time.sleep(2)
             
-            status_dropdown = driver.find_element(By.ID, "select2-ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_cmbSituacaoTurma-container")
-            status_dropdown.click()
+            try:
+                status_dropdown = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.ID, "select2-ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_cmbSituacaoTurma-container"))
+                )
+                click_element(driver, status_dropdown)
+            except TimeoutException:
+                print("Status dropdown not clickable")
+                driver.quit()
+                continue
+            time.sleep(1)
 
             active_status = driver.find_element(By.XPATH, "//*[text()='Vigente']")
             active_status.click()
@@ -232,38 +263,39 @@ while current_date <= end_date_range:
                 continue
             time.sleep(5)
 
-            move_downloaded_file(download_dir, base_target_dir, current_date)
+            try:
+                move_downloaded_file(download_dir, base_target_dir, current_date)
             
-            xls_file_path = os.path.join(base_target_dir, f"Relatorio_{current_date.strftime('%d_%m_%Y')}.xls")
+                xls_file_path = os.path.join(base_target_dir, f"Relatorio_{current_date.strftime('%d_%m_%Y')}.xls")
 
-            # Ler o arquivo XLS diretamente
-            data = pd.read_excel(xls_file_path, skiprows=3)
+                data = pd.read_excel(xls_file_path, skiprows=3)
 
-            # Mapeamento dos nomes das colunas que você deseja
-            column_mapping = {
-                'Nome': 'Nome',
-                'Professor': 'Professor',
-                'Vagas': 'Vagas',
-                'Integrantes': 'Integrantes',
-                'Trancados': 'Trancados',
-                'Horário': 'Horario',
-                'Não Frequentes': 'NaoFrequente',
-                'Frequentes': 'Frequente',
-                'Dias da Semana': 'DiasSemana'
-            }
+                column_mapping = {
+                    'Nome': 'Nome',
+                    'Professor': 'Professor',
+                    'Vagas': 'Vagas',
+                    'Integrantes': 'Integrantes',
+                    'Trancados': 'Trancados',
+                    'Horário': 'Horario',
+                    'Não Frequentes': 'NaoFrequente',
+                    'Frequentes': 'Frequente',
+                    'Dias da Semana': 'DiasSemana'
+                }
 
-            # Selecionar as colunas usando o mapeamento
-            selected_columns = {}
-            for desired, real in column_mapping.items():
-                if real in data.columns:
-                    selected_columns[desired] = data[real]
+                selected_columns = {}
+                for desired, real in column_mapping.items():
+                    if real in data.columns:
+                        selected_columns[desired] = data[real]
 
-            # Adiciona as colunas "Data" e "Sede"
-            selected_columns_df = pd.DataFrame(selected_columns)
-            selected_columns_df['Data'] = current_date.strftime("%d/%m/%Y")
-            selected_columns_df['Sede'] = head_office
+                selected_columns_df = pd.DataFrame(selected_columns)
+                selected_columns_df['Data'] = current_date.strftime("%d/%m/%Y")
+                selected_columns_df['Sede'] = head_office
 
-            combined_data.append(selected_columns_df)
+                combined_data.append(selected_columns_df)
+            except Exception as e:
+                print(f"Erro ao processar a data {current_date.strftime('%d/%m/%Y')}: {str(e)}")
+            finally:
+                current_date += timedelta(days=1)
 
             driver.quit()
 
@@ -271,8 +303,6 @@ while current_date <= end_date_range:
         except Exception as e:
             print(f"Erro ao processar a data {current_date.strftime('%d/%m/%Y')}: {str(e)}")
             driver.quit()
-        
-    current_date += timedelta(days=1)
 
 print("Download process completed.")
 
