@@ -50,9 +50,10 @@ prefs = {
     "plugins.always_open_pdf_externally": True
 }
 chrome_options.add_experimental_option("prefs", prefs)
+chrome_options.add_argument("--start-maximized")
 
-start_date_range = datetime.strptime("01/09/2024", "%d/%m/%Y")
-end_date_range = datetime.strptime("07/12/2024", "%d/%m/%Y")
+start_date_range = datetime.strptime("13/01/2025", "%d/%m/%Y")
+end_date_range = datetime.strptime("18/01/2025", "%d/%m/%Y")
 
 current_date = start_date_range
 
@@ -241,7 +242,7 @@ while current_date <= end_date_range:
             time.sleep(1)
 
             select2_span = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, ".select2-selection__rendered"))
+                EC.element_to_be_clickable((By.ID, "select2-ctl00_ctl00_ContentPlaceHolder1_cmbTipoExportacao-container"))
             )
             select2_span.click()
             time.sleep(1)
