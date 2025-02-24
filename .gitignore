@@ -16,3 +16,6 @@
 *.7z
 *.xls
 *.xlsx
+*.pyc
+__pycache__
+*.pyo
