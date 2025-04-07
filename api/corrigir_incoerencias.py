@@ -28,8 +28,8 @@ head_office = os.getenv("HEAD_OFFICE")
 if head_office not in credenciais:
     raise ValueError(f"Sede '{head_office}' inválida. Escolha entre: {list(credenciais.keys())}")
 
-data_inicio = datetime.strptime("13/01/2025", "%d/%m/%Y")
-data_fim = datetime.strptime("18/01/2025", "%d/%m/%Y")
+data_inicio = datetime.strptime("15/03/2025", "%d/%m/%Y")
+data_fim = datetime.strptime("23/03/2025", "%d/%m/%Y")
 
 def main():
     wb_combined = openpyxl.load_workbook("combined_data.xlsx")
@@ -182,9 +182,11 @@ def main():
                 integrantes = total_alunos
                 nao_frequente = total_faltas_turma
                 frequente = total_presencas_turma
+
+                data_formatada = data_referencia_dt.strftime('%d/%m/%Y')
                                 
                 data_row = [
-                    data_referencia_dt.date(),
+                    data_formatada,
                     nome_turma,
                     curso,
                     professor,

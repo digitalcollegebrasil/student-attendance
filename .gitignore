@@ -19,3 +19,4 @@
 *.pyc
 __pycache__
 *.pyo
+*.tmp

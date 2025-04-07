@@ -58,8 +58,10 @@ prefs = {
 chrome_options.add_experimental_option("prefs", prefs)
 chrome_options.add_argument("--start-maximized")
 
-start_date_range = datetime.strptime("10/02/2025", "%d/%m/%Y")
-end_date_range = datetime.strptime("15/02/2025", "%d/%m/%Y")
+start_date_range = input("Enter the start date (dd/mm/yyyy): ")
+end_date_range = input("Enter the end date (dd/mm/yyyy): ")
+start_date_range = datetime.strptime(start_date_range, "%d/%m/%Y")
+end_date_range = datetime.strptime(end_date_range, "%d/%m/%Y")
 
 current_date = start_date_range
 
