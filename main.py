@@ -43,6 +43,40 @@ def move_downloaded_file(download_dir, target_dir, current_date):
         shutil.move(os.path.join(download_dir, latest_file), target_path)
         print(f"Moved XLS for {current_date.strftime('%d/%m/%Y')} to {target_path}")
 
+def processar_turma(nome_turma):
+    turmas_ignoradas = ['aulas diversas', 'aulas diversas 2', 'aulas diversas gt']
+    nome_turma_normalizado = nome_turma.lower().strip()
+    
+    if any(turma in nome_turma_normalizado for turma in turmas_ignoradas):
+        print(f"Turma ignorada: {nome_turma}")
+        return None
+    return nome_turma
+
+def detectar_curso(nome_turma):
+    if not isinstance(nome_turma, str):
+        return ""
+    if nome_turma.startswith("CS"):
+        return "Cybersecurity"
+    elif nome_turma.startswith("FS") and not nome_turma.startswith("FSL"):
+        return "Full Stack"
+    elif nome_turma.startswith("DA"):
+        return "Data Analytics"
+    elif nome_turma.startswith("MD"):
+        return "Marketing Digital"
+    elif nome_turma.startswith("PHP"):
+        return "PHP com Laravel"
+    elif nome_turma.startswith("UX"):
+        return "UX UI"
+    elif nome_turma.startswith("PY"):
+        return "Python para Dados"
+    elif nome_turma.startswith("APM"):
+        return "Gerente de Projetos Ágeis"
+    elif nome_turma.startswith("FSL"):
+        return "Full Stack Live"
+    elif nome_turma.startswith("GT"):
+        return "Geração Tech"
+    return ""
+
 chrome_options = webdriver.ChromeOptions()
 prefs = {
     "download.default_directory": download_dir,
@@ -52,10 +86,8 @@ prefs = {
 chrome_options.add_experimental_option("prefs", prefs)
 chrome_options.add_argument("--start-maximized")
 
-start_date_range = input("Enter the start date (dd/mm/yyyy): ")
-end_date_range = input("Enter the end date (dd/mm/yyyy): ")
-start_date_range = datetime.strptime(start_date_range, "%d/%m/%Y")
-end_date_range = datetime.strptime(end_date_range, "%d/%m/%Y")
+start_date_range = datetime.strptime("07/04/2025", "%d/%m/%Y")
+end_date_range = datetime.strptime("07/04/2025", "%d/%m/%Y")
 
 current_date = start_date_range
 
@@ -70,6 +102,9 @@ while current_date <= end_date_range:
     while not success:
         try:
             day_of_week = get_day_of_week(current_date)
+
+            if current_date > end_date_range:
+                break
 
             if day_of_week == "Sunday":
                 current_date += timedelta(days=1)
@@ -273,43 +308,63 @@ while current_date <= end_date_range:
 
                 data = pd.read_excel(xls_file_path, skiprows=3)
 
-                column_mapping = {
-                    'Nome': 'Nome',
-                    'Professor': 'Professor',
-                    'Vagas': 'Vagas',
-                    'Integrantes': 'Integrantes',
-                    'Trancados': 'Trancados',
-                    'Horário': 'Horario',
-                    'Não Frequentes': 'NaoFrequente',
-                    'Frequentes': 'Frequente',
-                    'Dias da Semana': 'DiasSemana'
-                }
+                data['Nome'] = data['Nome'].apply(processar_turma)
 
-                selected_columns = {}
-                for desired, real in column_mapping.items():
-                    if real in data.columns:
-                        selected_columns[desired] = data[real]
+                data = data.dropna(subset=['Nome'])
 
-                selected_columns_df = pd.DataFrame(selected_columns)
-                selected_columns_df['Data'] = current_date.strftime("%d/%m/%Y")
-                selected_columns_df['Sede'] = head_office
+                if data.empty:
+                    print(f"Nenhuma turma válida encontrada para a data {current_date.strftime('%d/%m/%Y')}.")
+                    continue
 
+                nome_turma = data['Nome'].iloc[0]
+
+                if not nome_turma:
+                    continue
+
+                if 'Não Frequentes' not in data.columns and 'NaoFrequente' in data.columns:
+                    data['Não Frequentes'] = data['NaoFrequente']
+                if 'Frequentes' not in data.columns and 'Frequente' in data.columns:
+                    data['Frequentes'] = data['Frequente']
+                if 'Dias da Semana' not in data.columns and 'DiasSemana' in data.columns:
+                    data['Dias da Semana'] = data['DiasSemana']
+
+                print(f"Nome da turma: {nome_turma}")
+                print(f"Data: {current_date.strftime('%d/%m/%Y')}")
+                print(f"Sede: {head_office}")
+
+                data['Data'] = current_date.strftime("%d/%m/%Y")
+                data['Curso'] = data['Nome'].apply(detectar_curso)
+                data['Sede'] = head_office
+
+                selected_columns = [
+                    'Data', 'Nome', 'Curso', 'Professor', 'Vagas', 'Integrantes',
+                    'Trancados', 'Horario', 'Não Frequentes', 'Frequentes', 'Dias da Semana', 'Sede'
+                ]
+
+                selected_columns_df = data[selected_columns]
+                print(selected_columns_df)
+                print(f"Dados: {data}")
                 combined_data.append(selected_columns_df)
+                print(f"Dados do dia {current_date.strftime('%d/%m/%Y')} adicionados com sucesso.")
+                success = True
             except Exception as e:
                 print(f"Erro ao processar a data {current_date.strftime('%d/%m/%Y')}: {str(e)}")
             finally:
                 current_date += timedelta(days=1)
-
-            driver.quit()
-
-            success = True
+                try:
+                    driver.quit()
+                except:
+                    pass
         except Exception as e:
             print(f"Erro ao processar a data {current_date.strftime('%d/%m/%Y')}: {str(e)}")
             driver.quit()
 
 print("Download process completed.")
 
-final_df = pd.concat(combined_data)
-final_output_path = os.path.join(current_dir, 'combined_data.xlsx')
-final_df.to_excel(final_output_path, index=False)
-print(f"Combined data saved to {final_output_path}")
+if combined_data:
+    final_df = pd.concat(combined_data)
+    final_output_path = os.path.join(current_dir, 'combined_data.xlsx')
+    final_df.to_excel(final_output_path, index=False)
+    print(f"Combined data saved to {final_output_path}")
+else:
+    print("No data to save.")
