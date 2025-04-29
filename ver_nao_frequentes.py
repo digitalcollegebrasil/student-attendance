@@ -9,8 +9,7 @@ df = pd.read_excel(input_file)
 if 'Não Frequentes' not in df.columns:
     print("A coluna 'Não Frequentes' não foi encontrada na planilha.")
 else:
-    if (df['Não Frequentes'] == 0).all():
-        df.to_excel(output_file, index=False)
-        print(f"Todos os registros têm 'Não Frequentes' igual a 0. Planilha salva como '{output_file}'.")
-    else:
-        print("Nem todos os registros têm 'Não Frequentes' igual a 0. Nenhuma planilha foi gerada.")
+    df_filtrado = df[df['Não Frequentes'] == 0]
+
+    df_filtrado.to_excel(output_file, index=False)
+    print(f"{len(df_filtrado)} registros com 'Não Frequentes' igual a 0 foram salvos em '{output_file}'.")
