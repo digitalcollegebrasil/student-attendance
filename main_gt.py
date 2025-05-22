@@ -312,8 +312,10 @@ while current_date <= end_date_range:
 
                 data = data.dropna(subset=['Nome'])
 
+                data = data[data['Nome'].str.startswith("GT", na=False)]
+
                 if data.empty:
-                    print(f"Nenhuma turma válida encontrada para a data {current_date.strftime('%d/%m/%Y')}.")
+                    print(f"Nenhuma turma 'GT' encontrada para a data {current_date.strftime('%d/%m/%Y')}.")
                     continue
 
                 nome_turma = data['Nome'].iloc[0]
