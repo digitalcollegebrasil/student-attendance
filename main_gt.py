@@ -9,6 +9,9 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from datetime import datetime, timedelta
+import pandas as pd
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 load_dotenv()
 
@@ -86,8 +89,8 @@ prefs = {
 chrome_options.add_experimental_option("prefs", prefs)
 chrome_options.add_argument("--start-maximized")
 
-start_date_range = datetime.strptime("01/04/2025", "%d/%m/%Y")
-end_date_range = datetime.strptime("21/05/2025", "%d/%m/%Y")
+start_date_range = datetime.strptime("22/05/2025", "%d/%m/%Y")
+end_date_range = datetime.strptime("27/05/2025", "%d/%m/%Y")
 
 current_date = start_date_range
 
@@ -309,6 +312,7 @@ while current_date <= end_date_range:
                 data = pd.read_excel(xls_file_path, skiprows=3)
 
                 data['Nome'] = data['Nome'].apply(processar_turma)
+                data['Nome'] = data['Nome'].str.replace('GTONLINE', '', regex=False).str.strip()
 
                 data = data.dropna(subset=['Nome'])
 
@@ -337,10 +341,15 @@ while current_date <= end_date_range:
                 data['Data'] = current_date.strftime("%d/%m/%Y")
                 data['Curso'] = data['Nome'].apply(detectar_curso)
                 data['Sede'] = head_office
+                data['% por Turma'] = data.apply(
+                    lambda row: round((row['Frequentes'] * 100) / (row['Frequentes'] + row['Não Frequentes']), 2)
+                    if (row['Frequentes'] + row['Não Frequentes']) != 0 else 0,
+                    axis=1
+                )
 
                 selected_columns = [
-                    'Data', 'Nome', 'Curso', 'Professor', 'Vagas', 'Integrantes',
-                    'Trancados', 'Horario', 'Não Frequentes', 'Frequentes', 'Dias da Semana', 'Sede'
+                    'Data', 'Nome', 'Curso', 'Professor', 'Integrantes', 'Horario',
+                    'Não Frequentes', 'Frequentes', '% por Turma', 'Dias da Semana', 'Sede'
                 ]
 
                 selected_columns_df = data[selected_columns]
@@ -370,3 +379,63 @@ if combined_data:
     print(f"Combined data saved to {final_output_path}")
 else:
     print("No data to save.")
+    exit()
+
+input_file = 'combined_data.xlsx'
+df = pd.read_excel(input_file)
+
+df.rename(columns={
+    "Nome": "Turma",
+    "Frequentes": "Frequente",
+}, inplace=True)
+
+if 'Turma' not in df.columns or 'Data' not in df.columns:
+    print("Colunas 'Turma' e 'Data' são necessárias.")
+    print("Colunas encontradas:", df.columns.tolist())
+    exit()
+
+scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
+client = gspread.authorize(creds)
+
+GOOGLE_SHEET_ID = '1osH9ewbO9X-6NaPUuODfzctZnq2KbDUghbcKBLAVN3U'
+sheet = client.open_by_key(GOOGLE_SHEET_ID)
+worksheet = sheet.worksheets()[0]
+
+def atualizar_linhas(sheet_destino, df_novos):
+    valores_existentes = sheet_destino.get_all_values()
+
+    if len(valores_existentes) < 2:
+        print("A planilha precisa ter ao menos duas linhas de cabeçalho.")
+        return
+
+    cabecalho = valores_existentes[1]
+    dados_existentes = valores_existentes[2:]
+
+    try:
+        idx_data = cabecalho.index("Data")
+        idx_turma = cabecalho.index("Turma")
+    except ValueError as e:
+        print(f"Erro ao localizar colunas: {e}")
+        return
+
+    index_map = {
+        (linha[idx_data], linha[idx_turma]): idx + 3
+        for idx, linha in enumerate(dados_existentes)
+    }
+
+    for _, row in df_novos.iterrows():
+        row = row.fillna('')
+        chave = (str(row['Data']), str(row['Turma']))
+        if chave in index_map:
+            linha_idx = index_map[chave]
+            sheet_destino.delete_row(linha_idx)
+            sheet_destino.insert_row(row.tolist(), linha_idx)
+            print(f"Atualizado: {chave}")
+        else:
+            sheet_destino.append_row(row.tolist())
+            print(f"Inserido: {chave}")
+
+atualizar_linhas(worksheet, df)
+
+print("Dados atualizados com sucesso.")
