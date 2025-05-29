@@ -89,8 +89,8 @@ prefs = {
 chrome_options.add_experimental_option("prefs", prefs)
 chrome_options.add_argument("--start-maximized")
 
-start_date_range = datetime.strptime("22/05/2025", "%d/%m/%Y")
-end_date_range = datetime.strptime("27/05/2025", "%d/%m/%Y")
+start_date_range = datetime.strptime("21/05/2025", "%d/%m/%Y")
+end_date_range = datetime.strptime("21/05/2025", "%d/%m/%Y")
 
 current_date = start_date_range
 
@@ -429,7 +429,8 @@ def atualizar_linhas(sheet_destino, df_novos):
         chave = (str(row['Data']), str(row['Turma']))
         if chave in index_map:
             linha_idx = index_map[chave]
-            sheet_destino.delete_row(linha_idx)
+            sheet_destino.delete_rows(linha_idx)
+            print(f"Removido: {chave}")
             sheet_destino.insert_row(row.tolist(), linha_idx)
             print(f"Atualizado: {chave}")
         else:
