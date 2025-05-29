@@ -15,7 +15,6 @@ from oauth2client.service_account import ServiceAccountCredentials
 
 load_dotenv()
 
-head_office = os.getenv("HEAD_OFFICE")
 email_address = os.getenv("SPONTE_EMAIL")
 password_value = os.getenv("SPONTE_PASSWORD")
 
@@ -90,7 +89,7 @@ chrome_options.add_experimental_option("prefs", prefs)
 chrome_options.add_argument("--start-maximized")
 
 start_date_range = datetime.strptime("21/05/2025", "%d/%m/%Y")
-end_date_range = datetime.strptime("21/05/2025", "%d/%m/%Y")
+end_date_range = datetime.strptime("27/05/2025", "%d/%m/%Y")
 
 current_date = start_date_range
 
@@ -100,275 +99,279 @@ def click_element(driver, element):
 
 combined_data = []
 
+head_offices = ['Aldeota', 'Sul', 'Bezerra']
+
 while current_date <= end_date_range:
-    success = False
-    while not success:
-        try:
-            day_of_week = get_day_of_week(current_date)
-
-            if current_date > end_date_range:
-                break
-
-            if day_of_week == "Sunday":
-                current_date += timedelta(days=1)
-                continue
-
-            print(f"Processing date: {current_date.strftime('%d/%m/%Y')} - {day_of_week}")
-
-            driver = webdriver.Chrome(options=chrome_options)
-            driver.get("https://www.sponteeducacional.net.br/SPRel/Didatico/Turmas.aspx")
-            
-            email = driver.find_element(By.ID, "txtLogin")
-            email.send_keys(email_address)
-            password = driver.find_element(By.ID, "txtSenha")
-            password.send_keys(password_value)
-
-            login_button = driver.find_element(By.ID, "btnok")
-            login_button.click()
-            time.sleep(5)
-
-            print(head_office)
-            enterprise = driver.find_element(By.ID, "ctl00_ctl00_spnNomeEmpresa").get_attribute("innerText").strip().replace(" ", "")
-            print(enterprise)
-            
-            combinacoes = {
-                ("Aldeota", "DIGITALCOLLEGESUL-74070"): (1, "Acessando a sede Aldeota."),
-                ("Aldeota", "DIGITALCOLLEGEBEZERRADEMENEZES-488365"): (1, "Acessando a sede Aldeota."),
-                ("Sul", "DIGITALCOLLEGEALDEOTA-72546"): (3, "Acessando a sede Sul."),
-                ("Sul", "DIGITALCOLLEGEBEZERRADEMENEZES-488365"): (3, "Acessando a sede Sul."),
-                ("Bezerra", "DIGITALCOLLEGEALDEOTA-72546"): (4, "Acessando a sede Bezerra."),
-                ("Bezerra", "DIGITALCOLLEGESUL-74070"): (4, "Acessando a sede Bezerra."),
-                ("Aldeota", "DIGITALCOLLEGEALDEOTA-72546"): (None, "O script já está na Aldeota."),
-                ("Sul", "DIGITALCOLLEGESUL-74070"): (None, "O script já está no Sul."),
-                ("Bezerra", "DIGITALCOLLEGEBEZERRADEMENEZES-488365"): (None, "O script já está na Bezerra."),
-            }
-
-            resultado = combinacoes.get((head_office, enterprise), (None, "Ação não realizada: combinação não reconhecida."))
-            val, message = resultado
-
-            print(message)
-
-            # if val is not None:
-            #     driver.execute_script(f"$('#ctl00_hdnEmpresa').val({val});javascript:__doPostBack('ctl00$lnkChange','');")
-            #     time.sleep(3)
-
-            if head_office == "Aldeota":
-                empresas_button = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_liEmpresas")
-                empresas_button.click()
-                time.sleep(2)
-                ul_element = driver.find_element(By.CSS_SELECTOR, 'ul.nav.nav-pills')
-                li_elements = ul_element.find_elements(By.TAG_NAME, 'li')
-                if li_elements:
-                    first_li = li_elements[0]
-                    first_li.click()
-                else:
-                    print("Nenhum elemento <li> encontrado.")
-                time.sleep(2)
-            elif head_office == "Sul":
-                empresas_button = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_liEmpresas")
-                empresas_button.click()
-                time.sleep(2)
-                aldeota_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_0")
-                aldeota_checkbox.click()
-                time.sleep(3)
-                sul_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_1")
-                sul_checkbox.click()
-                time.sleep(3)
-                ul_element = driver.find_element(By.CSS_SELECTOR, 'ul.nav.nav-pills')
-                li_elements = ul_element.find_elements(By.TAG_NAME, 'li')
-                if li_elements:
-                    first_li = li_elements[0]
-                    first_li.click()
-                else:
-                    print("Nenhum elemento <li> encontrado.")
-                time.sleep(2)
-            elif head_office == "Bezerra":
-                empresas_button = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_liEmpresas")
-                empresas_button.click()
-                time.sleep(2)
-                aldeota_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_0")
-                aldeota_checkbox.click()
-                time.sleep(3)
-                bezerra_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_2")
-                bezerra_checkbox.click()
-                time.sleep(3)
-                ul_element = driver.find_element(By.CSS_SELECTOR, 'ul.nav.nav-pills')
-                li_elements = ul_element.find_elements(By.TAG_NAME, 'li')
-                if li_elements:
-                    first_li = li_elements[0]
-                    first_li.click()
-                else:
-                    print("Nenhum elemento <li> encontrado.")
-                time.sleep(2)
-            
+    for head_office in head_offices:
+        success = False
+        while not success:
             try:
-                status_dropdown = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.ID, "select2-ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_cmbSituacaoTurma-container"))
-                )
-                click_element(driver, status_dropdown)
-            except TimeoutException:
-                print("Status dropdown not clickable")
-                driver.quit()
-                continue
-            time.sleep(1)
+                day_of_week = get_day_of_week(current_date)
 
-            active_status = driver.find_element(By.XPATH, "//*[text()='Pré Matrícula']")
-            active_status.click()
-            time.sleep(5)
+                if current_date > end_date_range:
+                    break
 
-            day_of_week_select = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_divDiaSemana")
-            day_of_week_select.click()
-            time.sleep(1)
-
-            day_of_week_box = None
-            if day_of_week == "Monday":
-                day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Segunda-Feira']")
-            elif day_of_week == "Tuesday":
-                day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Terça-Feira']")
-            elif day_of_week == "Wednesday":
-                day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Quarta-Feira']")
-            elif day_of_week == "Thursday":
-                day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Quinta-Feira']")
-            elif day_of_week == "Friday":
-                day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Sexta-Feira']")
-            elif day_of_week == "Saturday":
-                day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Sábado']")
-            elif day_of_week == "Sunday":
-                day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Domingo']")
-            
-            if day_of_week_box:
-                day_of_week_box.click()
-            time.sleep(1)
-
-            try:
-                quantitative_report_checkbox = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_chkRelatorioQuantitativo"))
-                )
-                click_element(driver, quantitative_report_checkbox)
-            except TimeoutException:
-                print("Quantitative report checkbox not clickable")
-                driver.quit()
-                continue
-            time.sleep(1)
-
-            try:
-                all_classes_checkbox = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_chkMarcarTurmas"))
-                )
-                click_element(driver, all_classes_checkbox)
-            except TimeoutException:
-                print("All classes checkbox not clickable")
-                driver.quit()
-                continue
-            time.sleep(3)
-
-            start_date = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_wcdDataInicioFaltasCons_txtData")
-            remove_value_attribute(driver, start_date)
-            set_input_value(driver, start_date, current_date.strftime("%d/%m/%Y"))
-
-            end_date = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_wcdDataTerminoFaltasCons_txtData")
-            remove_value_attribute(driver, end_date)
-            set_input_value(driver, end_date, current_date.strftime("%d/%m/%Y"))
-
-            try:
-                export_checkbox = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.ID, "ctl00_ctl00_ContentPlaceHolder1_chkExportar"))
-                )
-                click_element(driver, export_checkbox)
-            except TimeoutException:
-                print("Export checkbox not clickable")
-                driver.quit()
-                continue
-            time.sleep(1)
-
-            select2_span = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.ID, "select2-ctl00_ctl00_ContentPlaceHolder1_cmbTipoExportacao-container"))
-            )
-            select2_span.click()
-            time.sleep(1)
-
-            option = WebDriverWait(driver, 10).until(
-                EC.element_to_be_clickable((By.XPATH, "//*[text()='Excel Sem Formatação']"))
-            )
-            option.click()
-            time.sleep(1)
-
-            try:
-                generate_button = WebDriverWait(driver, 10).until(
-                    EC.element_to_be_clickable((By.ID, "ctl00_ctl00_ContentPlaceHolder1_btnGerar_div"))
-                )
-                click_element(driver, generate_button)
-            except TimeoutException:
-                print("Generate button not clickable")
-                driver.quit()
-                continue
-            time.sleep(5)
-
-            try:
-                move_downloaded_file(download_dir, base_target_dir, current_date)
-            
-                xls_file_path = os.path.join(base_target_dir, f"Relatorio_{current_date.strftime('%d_%m_%Y')}.xls")
-
-                data = pd.read_excel(xls_file_path, skiprows=3)
-
-                data['Nome'] = data['Nome'].apply(processar_turma)
-                data['Nome'] = data['Nome'].str.replace('GTONLINE', '', regex=False).str.strip()
-
-                data = data.dropna(subset=['Nome'])
-
-                data = data[data['Nome'].str.startswith("GT", na=False)]
-
-                if data.empty:
-                    print(f"Nenhuma turma 'GT' encontrada para a data {current_date.strftime('%d/%m/%Y')}.")
+                if day_of_week == "Sunday":
+                    current_date += timedelta(days=1)
                     continue
 
-                nome_turma = data['Nome'].iloc[0]
+                print(f"Processing date: {current_date.strftime('%d/%m/%Y')} - {day_of_week}")
 
-                if not nome_turma:
+                driver = webdriver.Chrome(options=chrome_options)
+                driver.get("https://www.sponteeducacional.net.br/SPRel/Didatico/Turmas.aspx")
+                
+                email = driver.find_element(By.ID, "txtLogin")
+                email.send_keys(email_address)
+                password = driver.find_element(By.ID, "txtSenha")
+                password.send_keys(password_value)
+
+                login_button = driver.find_element(By.ID, "btnok")
+                login_button.click()
+                time.sleep(5)
+
+                print(head_office)
+                enterprise = driver.find_element(By.ID, "ctl00_ctl00_spnNomeEmpresa").get_attribute("innerText").strip().replace(" ", "")
+                print(enterprise)
+                
+                combinacoes = {
+                    ("Aldeota", "DIGITALCOLLEGESUL-74070"): (1, "Acessando a sede Aldeota."),
+                    ("Aldeota", "DIGITALCOLLEGEBEZERRADEMENEZES-488365"): (1, "Acessando a sede Aldeota."),
+                    ("Sul", "DIGITALCOLLEGEALDEOTA-72546"): (3, "Acessando a sede Sul."),
+                    ("Sul", "DIGITALCOLLEGEBEZERRADEMENEZES-488365"): (3, "Acessando a sede Sul."),
+                    ("Bezerra", "DIGITALCOLLEGEALDEOTA-72546"): (4, "Acessando a sede Bezerra."),
+                    ("Bezerra", "DIGITALCOLLEGESUL-74070"): (4, "Acessando a sede Bezerra."),
+                    ("Aldeota", "DIGITALCOLLEGEALDEOTA-72546"): (None, "O script já está na Aldeota."),
+                    ("Sul", "DIGITALCOLLEGESUL-74070"): (None, "O script já está no Sul."),
+                    ("Bezerra", "DIGITALCOLLEGEBEZERRADEMENEZES-488365"): (None, "O script já está na Bezerra."),
+                }
+
+                resultado = combinacoes.get((head_office, enterprise), (None, "Ação não realizada: combinação não reconhecida."))
+                val, message = resultado
+
+                print(message)
+
+                # if val is not None:
+                #     driver.execute_script(f"$('#ctl00_hdnEmpresa').val({val});javascript:__doPostBack('ctl00$lnkChange','');")
+                #     time.sleep(3)
+
+                if head_office == "Aldeota":
+                    empresas_button = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_liEmpresas")
+                    empresas_button.click()
+                    time.sleep(2)
+                    ul_element = driver.find_element(By.CSS_SELECTOR, 'ul.nav.nav-pills')
+                    li_elements = ul_element.find_elements(By.TAG_NAME, 'li')
+                    if li_elements:
+                        first_li = li_elements[0]
+                        first_li.click()
+                    else:
+                        print("Nenhum elemento <li> encontrado.")
+                    time.sleep(2)
+                elif head_office == "Sul":
+                    empresas_button = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_liEmpresas")
+                    empresas_button.click()
+                    time.sleep(2)
+                    aldeota_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_0")
+                    aldeota_checkbox.click()
+                    time.sleep(3)
+                    sul_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_1")
+                    sul_checkbox.click()
+                    time.sleep(3)
+                    ul_element = driver.find_element(By.CSS_SELECTOR, 'ul.nav.nav-pills')
+                    li_elements = ul_element.find_elements(By.TAG_NAME, 'li')
+                    if li_elements:
+                        first_li = li_elements[0]
+                        first_li.click()
+                    else:
+                        print("Nenhum elemento <li> encontrado.")
+                    time.sleep(2)
+                elif head_office == "Bezerra":
+                    empresas_button = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_liEmpresas")
+                    empresas_button.click()
+                    time.sleep(2)
+                    aldeota_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_0")
+                    aldeota_checkbox.click()
+                    time.sleep(3)
+                    bezerra_checkbox = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_2")
+                    bezerra_checkbox.click()
+                    time.sleep(3)
+                    ul_element = driver.find_element(By.CSS_SELECTOR, 'ul.nav.nav-pills')
+                    li_elements = ul_element.find_elements(By.TAG_NAME, 'li')
+                    if li_elements:
+                        first_li = li_elements[0]
+                        first_li.click()
+                    else:
+                        print("Nenhum elemento <li> encontrado.")
+                    time.sleep(2)
+                
+                try:
+                    status_dropdown = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((By.ID, "select2-ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_cmbSituacaoTurma-container"))
+                    )
+                    click_element(driver, status_dropdown)
+                except TimeoutException:
+                    print("Status dropdown not clickable")
+                    driver.quit()
                     continue
+                time.sleep(1)
 
-                if 'Não Frequentes' not in data.columns and 'NaoFrequente' in data.columns:
-                    data['Não Frequentes'] = data['NaoFrequente']
-                if 'Frequentes' not in data.columns and 'Frequente' in data.columns:
-                    data['Frequentes'] = data['Frequente']
-                if 'Dias da Semana' not in data.columns and 'DiasSemana' in data.columns:
-                    data['Dias da Semana'] = data['DiasSemana']
+                active_status = driver.find_element(By.XPATH, "//*[text()='Pré Matrícula']")
+                active_status.click()
+                time.sleep(5)
 
-                print(f"Nome da turma: {nome_turma}")
-                print(f"Data: {current_date.strftime('%d/%m/%Y')}")
-                print(f"Sede: {head_office}")
+                day_of_week_select = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_divDiaSemana")
+                day_of_week_select.click()
+                time.sleep(1)
 
-                data['Data'] = current_date.strftime("%d/%m/%Y")
-                data['Curso'] = data['Nome'].apply(detectar_curso)
-                data['Sede'] = head_office
-                data['% por Turma'] = data.apply(
-                    lambda row: round((row['Frequentes'] * 100) / (row['Frequentes'] + row['Não Frequentes']), 2)
-                    if (row['Frequentes'] + row['Não Frequentes']) != 0 else 0,
-                    axis=1
+                day_of_week_box = None
+                if day_of_week == "Monday":
+                    day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Segunda-Feira']")
+                elif day_of_week == "Tuesday":
+                    day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Terça-Feira']")
+                elif day_of_week == "Wednesday":
+                    day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Quarta-Feira']")
+                elif day_of_week == "Thursday":
+                    day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Quinta-Feira']")
+                elif day_of_week == "Friday":
+                    day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Sexta-Feira']")
+                elif day_of_week == "Saturday":
+                    day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Sábado']")
+                elif day_of_week == "Sunday":
+                    day_of_week_box = driver.find_element(By.XPATH, "//*[text()='Domingo']")
+                
+                if day_of_week_box:
+                    day_of_week_box.click()
+                time.sleep(1)
+
+                try:
+                    quantitative_report_checkbox = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_chkRelatorioQuantitativo"))
+                    )
+                    click_element(driver, quantitative_report_checkbox)
+                except TimeoutException:
+                    print("Quantitative report checkbox not clickable")
+                    driver.quit()
+                    continue
+                time.sleep(1)
+
+                try:
+                    all_classes_checkbox = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_chkMarcarTurmas"))
+                    )
+                    click_element(driver, all_classes_checkbox)
+                except TimeoutException:
+                    print("All classes checkbox not clickable")
+                    driver.quit()
+                    continue
+                time.sleep(3)
+
+                start_date = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_wcdDataInicioFaltasCons_txtData")
+                remove_value_attribute(driver, start_date)
+                set_input_value(driver, start_date, current_date.strftime("%d/%m/%Y"))
+
+                end_date = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_wcdDataTerminoFaltasCons_txtData")
+                remove_value_attribute(driver, end_date)
+                set_input_value(driver, end_date, current_date.strftime("%d/%m/%Y"))
+
+                try:
+                    export_checkbox = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((By.ID, "ctl00_ctl00_ContentPlaceHolder1_chkExportar"))
+                    )
+                    click_element(driver, export_checkbox)
+                except TimeoutException:
+                    print("Export checkbox not clickable")
+                    driver.quit()
+                    continue
+                time.sleep(1)
+
+                select2_span = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.ID, "select2-ctl00_ctl00_ContentPlaceHolder1_cmbTipoExportacao-container"))
                 )
+                select2_span.click()
+                time.sleep(1)
 
-                selected_columns = [
-                    'Data', 'Nome', 'Curso', 'Professor', 'Integrantes', 'Horario',
-                    'Não Frequentes', 'Frequentes', '% por Turma', 'Dias da Semana', 'Sede'
-                ]
+                option = WebDriverWait(driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//*[text()='Excel Sem Formatação']"))
+                )
+                option.click()
+                time.sleep(1)
 
-                selected_columns_df = data[selected_columns]
-                print(selected_columns_df)
-                print(f"Dados: {data}")
-                combined_data.append(selected_columns_df)
-                print(f"Dados do dia {current_date.strftime('%d/%m/%Y')} adicionados com sucesso.")
-                success = True
+                try:
+                    generate_button = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((By.ID, "ctl00_ctl00_ContentPlaceHolder1_btnGerar_div"))
+                    )
+                    click_element(driver, generate_button)
+                except TimeoutException:
+                    print("Generate button not clickable")
+                    driver.quit()
+                    continue
+                time.sleep(5)
+
+                try:
+                    move_downloaded_file(download_dir, base_target_dir, current_date)
+                
+                    xls_file_path = os.path.join(base_target_dir, f"Relatorio_{current_date.strftime('%d_%m_%Y')}.xls")
+
+                    data = pd.read_excel(xls_file_path, skiprows=3)
+
+                    data['Nome'] = data['Nome'].apply(processar_turma)
+                    data['Nome'] = data['Nome'].str.replace('GTONLINE', '', regex=False).str.strip()
+
+                    data = data.dropna(subset=['Nome'])
+
+                    data = data[data['Nome'].str.startswith("GT", na=False)]
+
+                    if data.empty:
+                        print(f"Nenhuma turma 'GT' encontrada para a data {current_date.strftime('%d/%m/%Y')}.")
+                        success = True
+                        continue
+
+                    nome_turma = data['Nome'].iloc[0]
+
+                    if not nome_turma:
+                        continue
+
+                    if 'Não Frequentes' not in data.columns and 'NaoFrequente' in data.columns:
+                        data['Não Frequentes'] = data['NaoFrequente']
+                    if 'Frequentes' not in data.columns and 'Frequente' in data.columns:
+                        data['Frequentes'] = data['Frequente']
+                    if 'Dias da Semana' not in data.columns and 'DiasSemana' in data.columns:
+                        data['Dias da Semana'] = data['DiasSemana']
+
+                    print(f"Nome da turma: {nome_turma}")
+                    print(f"Data: {current_date.strftime('%d/%m/%Y')}")
+                    print(f"Sede: {head_office}")
+
+                    data['Data'] = current_date.strftime("%d/%m/%Y")
+                    data['Curso'] = data['Nome'].apply(detectar_curso)
+                    data['Sede'] = head_office
+                    data['% por Turma'] = data.apply(
+                        lambda row: round((row['Frequentes'] * 100) / (row['Frequentes'] + row['Não Frequentes']), 2)
+                        if (row['Frequentes'] + row['Não Frequentes']) != 0 else 0,
+                        axis=1
+                    )
+
+                    selected_columns = [
+                        'Data', 'Nome', 'Curso', 'Professor', 'Integrantes', 'Horario',
+                        'Não Frequentes', 'Frequentes', '% por Turma', 'Dias da Semana', 'Sede'
+                    ]
+
+                    selected_columns_df = data[selected_columns]
+                    print(selected_columns_df)
+                    print(f"Dados: {data}")
+                    combined_data.append(selected_columns_df)
+                    print(f"Dados do dia {current_date.strftime('%d/%m/%Y')} adicionados com sucesso.")
+                    success = True
+                except Exception as e:
+                    print(f"Erro ao processar a data {current_date.strftime('%d/%m/%Y')}: {str(e)}")
+                finally:
+                    try:
+                        driver.quit()
+                    except:
+                        pass
             except Exception as e:
                 print(f"Erro ao processar a data {current_date.strftime('%d/%m/%Y')}: {str(e)}")
-            finally:
-                current_date += timedelta(days=1)
-                try:
-                    driver.quit()
-                except:
-                    pass
-        except Exception as e:
-            print(f"Erro ao processar a data {current_date.strftime('%d/%m/%Y')}: {str(e)}")
-            driver.quit()
+                driver.quit()
+    current_date += timedelta(days=1)
 
 print("Download process completed.")
 
@@ -424,18 +427,28 @@ def atualizar_linhas(sheet_destino, df_novos):
         for idx, linha in enumerate(dados_existentes)
     }
 
+    colunas_planilha = {col: idx for idx, col in enumerate(cabecalho)}
+
     for _, row in df_novos.iterrows():
         row = row.fillna('')
         chave = (str(row['Data']), str(row['Turma']))
+        valores = row.tolist()
+
         if chave in index_map:
             linha_idx = index_map[chave]
-            sheet_destino.delete_rows(linha_idx)
-            print(f"Removido: {chave}")
-            sheet_destino.insert_row(row.tolist(), linha_idx)
+            cell_range = sheet_destino.range(linha_idx, 1, linha_idx, len(cabecalho))
+            for i, cell in enumerate(cell_range):
+                if i < len(valores):
+                    cell.value = str(valores[i])
+                else:
+                    cell.value = ''
+            sheet_destino.update_cells(cell_range)
             print(f"Atualizado: {chave}")
         else:
-            sheet_destino.append_row(row.tolist())
+            sheet_destino.append_row(valores)
             print(f"Inserido: {chave}")
+
+        time.sleep(1)
 
 atualizar_linhas(worksheet, df)
 
