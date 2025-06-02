@@ -9,6 +9,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from datetime import datetime, timedelta
+import json
 import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -389,7 +390,14 @@ df_online = df[df['Turma'].astype(str).str[2].str.upper() == 'L']
 df_presencial = df[df['Turma'].astype(str).str[2].str.upper() != 'L']
 
 scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
+
+json_creds = os.environ.get('GOOGLE_CREDENTIALS_JSON')
+if not json_creds:
+    print("Erro: variável de ambiente 'GOOGLE_CREDENTIALS_JSON' não encontrada.")
+    exit()
+
+creds_dict = json.loads(json_creds)
+creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 client = gspread.authorize(creds)
 
 GOOGLE_SHEET_ID = '1OAc-A6bJ0J1wRz-mnv-BVtOH9V93Vk_bs43Edhy8-fc'
