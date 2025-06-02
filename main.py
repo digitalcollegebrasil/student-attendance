@@ -9,6 +9,9 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from datetime import datetime, timedelta
+import pandas as pd
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
 
 load_dotenv()
 
@@ -86,8 +89,13 @@ prefs = {
 chrome_options.add_experimental_option("prefs", prefs)
 chrome_options.add_argument("--start-maximized")
 
-start_date_range = datetime.strptime("07/04/2025", "%d/%m/%Y")
-end_date_range = datetime.strptime("07/04/2025", "%d/%m/%Y")
+hoje = datetime.today()
+
+start_date_range = hoje - timedelta(days=9)
+end_date_range = hoje - timedelta(days=2)
+
+print("Data de início:", start_date_range.strftime("%d/%m/%Y"))
+print("Data final:", end_date_range.strftime("%d/%m/%Y"))
 
 current_date = start_date_range
 
@@ -368,3 +376,73 @@ if combined_data:
     print(f"Combined data saved to {final_output_path}")
 else:
     print("No data to save.")
+    exit()
+
+input_file = 'combined_data.xlsx'
+df = pd.read_excel(input_file)
+
+if 'Turma' not in df.columns or 'Data' not in df.columns:
+    print("Colunas 'Turma' e 'Data' são necessárias.")
+    exit()
+
+df_online = df[df['Turma'].astype(str).str[2].str.upper() == 'L']
+df_presencial = df[df['Turma'].astype(str).str[2].str.upper() != 'L']
+
+scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
+client = gspread.authorize(creds)
+
+GOOGLE_SHEET_ID = '1OAc-A6bJ0J1wRz-mnv-BVtOH9V93Vk_bs43Edhy8-fc'
+sheet = client.open_by_key(GOOGLE_SHEET_ID)
+sheet_presencial = sheet.get_worksheet(0)
+sheet_online = sheet.get_worksheet(1)
+
+def atualizar_linhas(sheet_destino, df_novos):
+    valores_existentes = sheet_destino.get_all_values()
+
+    if len(valores_existentes) < 2:
+        print("A planilha precisa ter ao menos duas linhas de cabeçalho.")
+        return
+
+    cabecalho = valores_existentes[0]
+    dados_existentes = valores_existentes[1:]
+
+    try:
+        idx_data = cabecalho.index("Data")
+        idx_turma = cabecalho.index("Turma")
+    except ValueError as e:
+        print(f"Erro ao localizar colunas: {e}")
+        return
+
+    index_map = {
+        (linha[idx_data], linha[idx_turma]): idx + 3
+        for idx, linha in enumerate(dados_existentes)
+    }
+
+    colunas_planilha = {col: idx for idx, col in enumerate(cabecalho)}
+
+    for _, row in df_novos.iterrows():
+        row = row.fillna('')
+        chave = (str(row['Data']), str(row['Turma']))
+        valores = row.tolist()
+
+        if chave in index_map:
+            linha_idx = index_map[chave]
+            cell_range = sheet_destino.range(linha_idx, 1, linha_idx, len(cabecalho))
+            for i, cell in enumerate(cell_range):
+                if i < len(valores):
+                    cell.value = str(valores[i])
+                else:
+                    cell.value = ''
+            sheet_destino.update_cells(cell_range)
+            print(f"Atualizado: {chave}")
+        else:
+            sheet_destino.append_row(valores)
+            print(f"Inserido: {chave}")
+
+        time.sleep(1)
+
+atualizar_linhas(sheet_presencial, df_presencial)
+atualizar_linhas(sheet_online, df_online)
+
+print("Dados atualizados com sucesso.")
