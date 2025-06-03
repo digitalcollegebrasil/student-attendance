@@ -23,25 +23,31 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Instalar Google Chrome
+      - name: Instalar Google Chrome (Chrome for Testing)
         run: |
           sudo apt-get update
-          sudo apt-get install -y google-chrome-stable
+          sudo apt-get install -y wget unzip
+          wget https://storage.googleapis.com/chrome-for-testing-public/latest/linux64/chrome-linux64.zip
+          unzip chrome-linux64.zip
+          sudo mv chrome-linux64 /opt/chrome
+          sudo ln -s /opt/chrome/chrome /usr/bin/google-chrome
+
+      - name: Baixar e instalar ChromeDriver correspondente
+        run: |
+          wget https://storage.googleapis.com/chrome-for-testing-public/latest/linux64/chromedriver-linux64.zip
+          unzip chromedriver-linux64.zip
+          sudo mv chromedriver-linux64/chromedriver /usr/local/bin/
+          sudo chmod +x /usr/local/bin/chromedriver
+
+      - name: Verificar versões instaladas
+        run: |
+          google-chrome --version
+          chromedriver --version
 
       - name: Instalar dependências Python
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-
-      - name: Instalar ChromeDriver compatível
-        uses: nanasess/setup-chromedriver@v2
-        with:
-          chromedriver-version: latest
-
-      - name: Verificar versões
-        run: |
-          google-chrome --version
-          chromedriver --version
 
       - name: Executar script Python do Geração Tech
         run: python main_gt.py
