@@ -80,21 +80,7 @@ def detectar_curso(nome_turma):
         return "Geração Tech"
     return ""
 
-chrome_options = webdriver.ChromeOptions()
-prefs = {
-    "download.default_directory": download_dir,
-    "download.prompt_for_download": False,
-    "plugins.always_open_pdf_externally": True
-}
-chrome_options.add_experimental_option("prefs", prefs)
-chrome_options.add_argument("--start-maximized")
-chrome_options.add_argument('--headless=new')
-chrome_options.add_argument('--no-sandbox')
-chrome_options.add_argument('--disable-dev-shm-usage')
-
-user_data_dir = tempfile.mkdtemp()
-chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
-
+download_dir = "/tmp"
 start_date_range = datetime.strptime("21/05/2025", "%d/%m/%Y")
 end_date_range = datetime.strptime("27/05/2025", "%d/%m/%Y")
 
@@ -112,6 +98,21 @@ while current_date <= end_date_range:
     for head_office in head_offices:
         success = False
         while not success:
+            user_data_dir = tempfile.mkdtemp()
+            chrome_options = webdriver.ChromeOptions()
+            prefs = {
+                "download.default_directory": download_dir,
+                "download.prompt_for_download": False,
+                "plugins.always_open_pdf_externally": True
+            }
+            chrome_options.add_experimental_option("prefs", prefs)
+            chrome_options.add_argument("--start-maximized")
+            chrome_options.add_argument('--headless=new')
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+            chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
+
+            driver = None
             try:
                 day_of_week = get_day_of_week(current_date)
 
