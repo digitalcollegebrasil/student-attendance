@@ -9,6 +9,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from datetime import datetime, timedelta
+import tempfile
 import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -87,6 +88,12 @@ prefs = {
 }
 chrome_options.add_experimental_option("prefs", prefs)
 chrome_options.add_argument("--start-maximized")
+chrome_options.add_argument('--headless=new')
+chrome_options.add_argument('--no-sandbox')
+chrome_options.add_argument('--disable-dev-shm-usage')
+
+user_data_dir = tempfile.mkdtemp()
+chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
 
 start_date_range = datetime.strptime("21/05/2025", "%d/%m/%Y")
 end_date_range = datetime.strptime("27/05/2025", "%d/%m/%Y")
