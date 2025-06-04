@@ -18,6 +18,7 @@ load_dotenv()
 
 email_address = os.getenv("SPONTE_EMAIL")
 password_value = os.getenv("SPONTE_PASSWORD")
+credentials_file = os.getenv("GOOGLE_CREDENTIALS_JSON")
 
 current_dir = os.path.dirname(__file__)
 download_dir = os.path.join(current_dir, 'downloads')
@@ -407,7 +408,7 @@ if 'Turma' not in df.columns or 'Data' not in df.columns:
     exit()
 
 scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-creds = ServiceAccountCredentials.from_json_keyfile_name('credentials.json', scope)
+creds = ServiceAccountCredentials.from_json(credentials_file, scope)
 client = gspread.authorize(creds)
 
 GOOGLE_SHEET_ID = '1osH9ewbO9X-6NaPUuODfzctZnq2KbDUghbcKBLAVN3U'
