@@ -403,7 +403,7 @@ df_online = df[df['Turma'].astype(str).str[2].str.upper() == 'L']
 df_presencial = df[df['Turma'].astype(str).str[2].str.upper() != 'L']
 
 scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-creds = ServiceAccountCredentials.from_json_keyfile_dict(credentials_json, scope)
+creds = ServiceAccountCredentials.from_json_keyfile_name(credentials_json, scope)
 client = gspread.authorize(creds)
 
 GOOGLE_SHEET_ID = '1OAc-A6bJ0J1wRz-mnv-BVtOH9V93Vk_bs43Edhy8-fc'
