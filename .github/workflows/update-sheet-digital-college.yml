@@ -51,6 +51,6 @@ jobs:
 
       - name: Executar script Python da Digital College
         run: |
-          echo "$GOOGLE_CREDENTIALS_JSON" > credentials.json
+          printf "%s" "$GOOGLE_CREDENTIALS_JSON" > credentials.json
           export GOOGLE_CREDENTIALS_JSON=credentials.json
           python main.py

@@ -18,6 +18,7 @@ load_dotenv()
 
 email_address = os.getenv("SPONTE_EMAIL")
 password_value = os.getenv("SPONTE_PASSWORD")
+credentials_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
 
 current_dir = os.path.dirname(__file__)
 download_dir = os.path.join(current_dir, 'downloads')
@@ -393,14 +394,7 @@ df_online = df[df['Turma'].astype(str).str[2].str.upper() == 'L']
 df_presencial = df[df['Turma'].astype(str).str[2].str.upper() != 'L']
 
 scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-
-json_creds = os.environ.get('GOOGLE_CREDENTIALS_JSON')
-if not json_creds:
-    print("Erro: variável de ambiente 'GOOGLE_CREDENTIALS_JSON' não encontrada.")
-    exit()
-
-creds_dict = json.loads(json_creds)
-creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+creds = ServiceAccountCredentials.from_json_keyfile_dict(credentials_json, scope)
 client = gspread.authorize(creds)
 
 GOOGLE_SHEET_ID = '1OAc-A6bJ0J1wRz-mnv-BVtOH9V93Vk_bs43Edhy8-fc'
