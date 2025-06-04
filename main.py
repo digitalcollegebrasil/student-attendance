@@ -9,6 +9,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from datetime import datetime, timedelta
+import tempfile
 import json
 import pandas as pd
 import gspread
@@ -81,22 +82,10 @@ def detectar_curso(nome_turma):
         return "Geração Tech"
     return ""
 
-chrome_options = webdriver.ChromeOptions()
-prefs = {
-    "download.default_directory": download_dir,
-    "download.prompt_for_download": False,
-    "plugins.always_open_pdf_externally": True
-}
-chrome_options.add_experimental_option("prefs", prefs)
-chrome_options.add_argument("--start-maximized")
-
+download_dir = "/tmp"
 hoje = datetime.today()
-
 start_date_range = hoje - timedelta(days=9)
 end_date_range = hoje - timedelta(days=2)
-
-print("Data de início:", start_date_range.strftime("%d/%m/%Y"))
-print("Data final:", end_date_range.strftime("%d/%m/%Y"))
 
 current_date = start_date_range
 
@@ -112,6 +101,21 @@ while current_date <= end_date_range:
     for head_office in head_offices:
         success = False
         while not success:
+            user_data_dir = tempfile.mkdtemp()
+            chrome_options = webdriver.ChromeOptions()
+            prefs = {
+                "download.default_directory": download_dir,
+                "download.prompt_for_download": False,
+                "plugins.always_open_pdf_externally": True
+            }
+            chrome_options.add_experimental_option("prefs", prefs)
+            chrome_options.add_argument("--start-maximized")
+            chrome_options.add_argument('--headless=new')
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+            chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
+
+            driver = None
             try:
                 day_of_week = get_day_of_week(current_date)
 
