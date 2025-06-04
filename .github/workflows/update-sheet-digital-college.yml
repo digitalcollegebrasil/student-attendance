@@ -1,0 +1,53 @@
+name: Atualizar Google Sheet das turmas da Digital College
+
+on:
+  schedule:
+    - cron: '0 10 * * *'
+  workflow_dispatch:
+
+jobs:
+  update-sheet:
+    runs-on: ubuntu-latest
+
+    env:
+      GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+      SPONTE_EMAIL: ${{ secrets.SPONTE_EMAIL }}
+      SPONTE_PASSWORD: ${{ secrets.SPONTE_PASSWORD }}
+
+    steps:
+      - name: Checkout do repositório
+        uses: actions/checkout@v3
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar dependências
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget unzip
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Baixar e instalar Chrome
+        run: |
+          wget https://storage.googleapis.com/chrome-for-testing-public/137.0.7127.2/linux64/chrome-linux64.zip
+          unzip chrome-linux64.zip
+          sudo mv chrome-linux64 /opt/chrome
+          sudo ln -sf /opt/chrome/chrome /usr/bin/google-chrome
+
+      - name: Baixar e instalar ChromeDriver
+        run: |
+          wget https://storage.googleapis.com/chrome-for-testing-public/137.0.7127.2/linux64/chromedriver-linux64.zip
+          unzip chromedriver-linux64.zip
+          sudo mv chromedriver-linux64/chromedriver /usr/local/bin/
+          sudo chmod +x /usr/local/bin/chromedriver
+
+      - name: Verificar versões instaladas
+        run: |
+          google-chrome --version
+          chromedriver --version
+
+      - name: Executar script Python da Digital College
+        run: python main.py
