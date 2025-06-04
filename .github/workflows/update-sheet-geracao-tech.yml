@@ -50,4 +50,7 @@ jobs:
           chromedriver --version
 
       - name: Executar script Python do Geração Tech
-        run: python main_gt.py
+        run: |
+          echo "$GOOGLE_CREDENTIALS_JSON" > credentials.json
+          export GOOGLE_CREDENTIALS_JSON=credentials.json
+          python main.py

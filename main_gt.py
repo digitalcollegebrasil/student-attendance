@@ -409,8 +409,7 @@ if 'Turma' not in df.columns or 'Data' not in df.columns:
     exit()
 
 scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-credentials_dict = json.loads(credentials_file)
-creds = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict, scope)
+creds = ServiceAccountCredentials.from_json_keyfile_name(credentials_file, scope)
 client = gspread.authorize(creds)
 
 GOOGLE_SHEET_ID = '1osH9ewbO9X-6NaPUuODfzctZnq2KbDUghbcKBLAVN3U'
