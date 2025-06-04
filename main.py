@@ -390,6 +390,11 @@ else:
 input_file = 'combined_data.xlsx'
 df = pd.read_excel(input_file)
 
+df.rename(columns={
+    "Nome": "Turma",
+    "Frequentes": "Frequente",
+}, inplace=True)
+
 if 'Turma' not in df.columns or 'Data' not in df.columns:
     print("Colunas 'Turma' e 'Data' são necessárias.")
     exit()
