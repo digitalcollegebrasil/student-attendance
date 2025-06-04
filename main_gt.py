@@ -10,6 +10,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 from datetime import datetime, timedelta
 import tempfile
+import json
 import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
@@ -408,7 +409,8 @@ if 'Turma' not in df.columns or 'Data' not in df.columns:
     exit()
 
 scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-creds = ServiceAccountCredentials.from_json(credentials_file, scope)
+credentials_dict = json.loads(credentials_file)
+creds = ServiceAccountCredentials.from_json_keyfile_dict(credentials_dict, scope)
 client = gspread.authorize(creds)
 
 GOOGLE_SHEET_ID = '1osH9ewbO9X-6NaPUuODfzctZnq2KbDUghbcKBLAVN3U'
