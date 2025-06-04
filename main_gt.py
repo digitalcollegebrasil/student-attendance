@@ -81,8 +81,9 @@ def detectar_curso(nome_turma):
     return ""
 
 download_dir = "/tmp"
-start_date_range = datetime.strptime("21/05/2025", "%d/%m/%Y")
-end_date_range = datetime.strptime("27/05/2025", "%d/%m/%Y")
+hoje = datetime.today()
+start_date_range = hoje - timedelta(days=9)
+end_date_range = hoje - timedelta(days=2)
 
 current_date = start_date_range
 
