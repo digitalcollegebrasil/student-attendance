@@ -15,6 +15,7 @@ import json
 import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
+from googleapiclient.discovery import build
 
 load_dotenv()
 
@@ -464,6 +465,111 @@ def atualizar_linhas(sheet_destino, df_novos):
         time.sleep(1)
 
 atualizar_linhas(sheet_presencial, df_presencial)
+
+service = build('sheets', 'v4', credentials=creds)
+
+requests = [
+    {
+        "repeatCell": {
+            "range": {
+                "sheetId": sheet_presencial._properties['sheetId'],
+                "startColumnIndex": 0,
+                "endColumnIndex": 1
+            },
+            "cell": {
+                "userEnteredFormat": {
+                    "numberFormat": {
+                        "type": "DATE",
+                        "pattern": "dd/mm/yyyy"
+                    }
+                }
+            },
+            "fields": "userEnteredFormat.numberFormat"
+        }
+    },
+]
+
+for col in [4, 5, 6, 8, 9]:
+    requests.append({
+        "repeatCell": {
+            "range": {
+                "sheetId": sheet_presencial._properties['sheetId'],
+                "startColumnIndex": col,
+                "endColumnIndex": col + 1
+            },
+            "cell": {
+                "userEnteredFormat": {
+                    "numberFormat": {
+                        "type": "NUMBER",
+                        "pattern": "#,##0.00"
+                    }
+                }
+            },
+            "fields": "userEnteredFormat.numberFormat"
+        }
+    })
+
+body = {"requests": requests}
+
+service.spreadsheets().batchUpdate(
+    spreadsheetId=GOOGLE_SHEET_ID,
+    body=body
+).execute()
+
+print("Formatação aplicada na planilha presencial.")
+
 atualizar_linhas(sheet_online, df_online)
+
+service = build('sheets', 'v4', credentials=creds)
+
+requests = [
+    {
+        "repeatCell": {
+            "range": {
+                "sheetId": sheet_presencial._properties['sheetId'],
+                "startColumnIndex": 0,
+                "endColumnIndex": 1
+            },
+            "cell": {
+                "userEnteredFormat": {
+                    "numberFormat": {
+                        "type": "DATE",
+                        "pattern": "dd/mm/yyyy"
+                    }
+                }
+            },
+            "fields": "userEnteredFormat.numberFormat"
+        }
+    },
+]
+
+for col in [4, 5, 6, 8, 9]:
+    requests.append({
+        "repeatCell": {
+            "range": {
+                "sheetId": sheet_presencial._properties['sheetId'],
+                "startColumnIndex": col,
+                "endColumnIndex": col + 1
+            },
+            "cell": {
+                "userEnteredFormat": {
+                    "numberFormat": {
+                        "type": "NUMBER",
+                        "pattern": "#,##0.00"
+                    }
+                }
+            },
+            "fields": "userEnteredFormat.numberFormat"
+        }
+    })
+
+body = {"requests": requests}
+
+service.spreadsheets().batchUpdate(
+    spreadsheetId=GOOGLE_SHEET_ID,
+    body=body
+).execute()
+
+print("Formatação aplicada na planilha online.")
 
 print("Dados atualizados com sucesso.")
