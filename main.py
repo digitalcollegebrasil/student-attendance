@@ -448,8 +448,10 @@ def atualizar_linhas(sheet_destino, df_novos):
         chave = (str(row['Data']), str(row['Turma']))
         valores = []
         for v in row.tolist():
-            if isinstance(v, pd.Timestamp):
-                v = v.date()
+            if isinstance(v, (pd.Timestamp, pd._libs.tslibs.timestamps.Timestamp)):
+                v = v.strftime('%d/%m/%Y')
+            elif isinstance(v, (datetime.date, datetime.datetime)):
+                v = v.strftime('%d/%m/%Y')
             elif pd.isna(v):
                 v = ''
             elif isinstance(v, (np.int64, np.float64)):
