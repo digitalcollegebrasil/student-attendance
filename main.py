@@ -395,6 +395,13 @@ df.rename(columns={
     "Frequentes": "Frequente",
 }, inplace=True)
 
+df = df[~df['Turma'].astype(str).str.startswith('GT')]
+
+df['Data'] = pd.to_datetime(df['Data'], errors='coerce')
+colunas_numericas = ['Vagas', 'Integrantes', 'Trancados', 'Frequente', 'Não Frequentes']
+for coluna in colunas_numericas:
+    df[coluna] = pd.to_numeric(df[coluna], errors='coerce')
+
 if 'Turma' not in df.columns or 'Data' not in df.columns:
     print("Colunas 'Turma' e 'Data' são necessárias.")
     exit()
