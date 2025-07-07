@@ -453,7 +453,14 @@ def atualizar_linhas(sheet_destino, df_novos):
             cell_range = sheet_destino.range(linha_idx, 1, linha_idx, len(cabecalho))
             for i, cell in enumerate(cell_range):
                 if i < len(valores):
-                    cell.value = str(valores[i])
+                    coluna_nome = cabecalho[i]
+
+                    if coluna_nome == "Data" and isinstance(valores[i], (pd.Timestamp, datetime.date)):
+                        cell.value = valores[i].date() if isinstance(valores[i], pd.Timestamp) else valores[i]
+                    elif coluna_nome in colunas_numericas:
+                        cell.value = int(valores[i]) if pd.notna(valores[i]) else ''
+                    else:
+                        cell.value = str(valores[i])
                 else:
                     cell.value = ''
             sheet_destino.update_cells(cell_range)
@@ -555,7 +562,7 @@ for col in [4, 5, 6, 8, 9]:
                 "userEnteredFormat": {
                     "numberFormat": {
                         "type": "NUMBER",
-                        "pattern": "#,##0.00"
+                        "pattern": "0"
                     }
                 }
             },
