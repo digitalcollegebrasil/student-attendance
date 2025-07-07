@@ -398,7 +398,6 @@ df.rename(columns={
 
 df = df[~df['Turma'].astype(str).str.startswith('GT')]
 
-df['Data'] = pd.to_datetime(df['Data'], errors='coerce')
 colunas_numericas = ['Vagas', 'Integrantes', 'Trancados', 'Frequente', 'Não Frequentes']
 for coluna in colunas_numericas:
     df[coluna] = pd.to_numeric(df[coluna], errors='coerce')
