@@ -445,7 +445,15 @@ def atualizar_linhas(sheet_destino, df_novos):
     for _, row in df_novos.iterrows():
         row = row.fillna('')
         chave = (str(row['Data']), str(row['Turma']))
-        valores = row.tolist()
+        valores = []
+        for v in row.tolist():
+            if isinstance(v, pd.Timestamp):
+                v = v.date()
+            elif pd.isna(v):
+                v = ''
+            elif isinstance(v, (np.int64, np.float64)):
+                v = v.item()
+            valores.append(v)
 
         if chave in index_map:
             linha_idx = index_map[chave]
