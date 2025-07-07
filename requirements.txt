@@ -5,3 +5,4 @@ openpyxl
 xlrd
 gspread
 oauth2client
+numpy
