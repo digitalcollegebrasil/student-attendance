@@ -9,7 +9,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 import tempfile
 import json
 import pandas as pd
@@ -455,7 +455,7 @@ def atualizar_linhas(sheet_destino, df_novos):
                 if i < len(valores):
                     coluna_nome = cabecalho[i]
 
-                    if coluna_nome == "Data" and isinstance(valores[i], (pd.Timestamp, datetime.date)):
+                    if coluna_nome == "Data" and isinstance(valores[i], (pd.Timestamp, date)):
                         cell.value = valores[i].date() if isinstance(valores[i], pd.Timestamp) else valores[i]
                     elif coluna_nome in colunas_numericas:
                         cell.value = int(valores[i]) if pd.notna(valores[i]) else ''
