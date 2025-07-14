@@ -456,7 +456,7 @@ def atualizar_linhas(sheet_destino, df_novos):
                     coluna_nome = cabecalho[i]
 
                     if coluna_nome == "Data" and isinstance(valores[i], (pd.Timestamp, date)):
-                        cell.value = valores[i].date() if isinstance(valores[i], pd.Timestamp) else valores[i]
+                        cell.value = valores[i].strftime("%Y-%m-%d")
                     elif coluna_nome in colunas_numericas:
                         cell.value = int(valores[i]) if pd.notna(valores[i]) else ''
                     else:
@@ -533,7 +533,7 @@ requests = [
     {
         "repeatCell": {
             "range": {
-                "sheetId": sheet_presencial._properties['sheetId'],
+                "sheetId": sheet_online._properties['sheetId'],
                 "startColumnIndex": 0,
                 "endColumnIndex": 1
             },
@@ -554,7 +554,7 @@ for col in [4, 5, 6, 8, 9]:
     requests.append({
         "repeatCell": {
             "range": {
-                "sheetId": sheet_presencial._properties['sheetId'],
+                "sheetId": sheet_online._properties['sheetId'],
                 "startColumnIndex": col,
                 "endColumnIndex": col + 1
             },
