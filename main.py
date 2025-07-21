@@ -487,7 +487,7 @@ requests = [
                 "userEnteredFormat": {
                     "numberFormat": {
                         "type": "DATE",
-                        "pattern": "dd/mm/yyyy"
+                        "pattern": "yyyy/mm/dd"
                     }
                 }
             },
@@ -508,7 +508,7 @@ for col in [4, 5, 6, 8, 9]:
                 "userEnteredFormat": {
                     "numberFormat": {
                         "type": "NUMBER",
-                        "pattern": "#,##0.00"
+                        "pattern": "#,##0"
                     }
                 }
             },
