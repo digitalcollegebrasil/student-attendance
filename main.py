@@ -456,7 +456,7 @@ def atualizar_linhas(sheet_destino, df_novos):
                     coluna_nome = cabecalho[i]
 
                     if coluna_nome == "Data" and isinstance(valores[i], (pd.Timestamp, date)):
-                        cell.value = valores[i].strftime("%Y-%m-%d")
+                        cell.value = valores[i].strftime("%d/%m/%Y")
                     elif coluna_nome in colunas_numericas:
                         cell.value = int(valores[i]) if pd.notna(valores[i]) else ''
                     else:
@@ -487,7 +487,7 @@ requests = [
                 "userEnteredFormat": {
                     "numberFormat": {
                         "type": "DATE",
-                        "pattern": "yyyy/mm/dd"
+                        "pattern": "dd/MM/yyyy"
                     }
                 }
             },
@@ -508,7 +508,7 @@ for col in [4, 5, 6, 8, 9]:
                 "userEnteredFormat": {
                     "numberFormat": {
                         "type": "NUMBER",
-                        "pattern": "#,##0"
+                        "pattern": "0"
                     }
                 }
             },
@@ -541,7 +541,7 @@ requests = [
                 "userEnteredFormat": {
                     "numberFormat": {
                         "type": "DATE",
-                        "pattern": "yyyy/mm/dd"
+                        "pattern": "dd/MM/yyyy"
                     }
                 }
             },
@@ -562,7 +562,7 @@ for col in [4, 5, 6, 8, 9]:
                 "userEnteredFormat": {
                     "numberFormat": {
                         "type": "NUMBER",
-                        "pattern": "#,##0"
+                        "pattern": "0"
                     }
                 }
             },
