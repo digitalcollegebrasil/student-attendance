@@ -16,6 +16,7 @@ import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from googleapiclient.discovery import build
+import platform
 
 load_dotenv()
 
@@ -84,9 +85,13 @@ def detectar_curso(nome_turma):
         return "Geração Tech"
     return ""
 
-download_dir = "/tmp"
+if platform.system() == "Windows":
+    download_dir = tempfile.gettempdir()
+else:
+    download_dir = "/tmp"
+
 hoje = datetime.today()
-start_date_range = hoje - timedelta(days=9)
+start_date_range = hoje - timedelta(days=11)
 end_date_range = hoje - timedelta(days=2)
 
 current_date = start_date_range
@@ -216,20 +221,20 @@ while current_date <= end_date_range:
                         print("Nenhum elemento <li> encontrado.")
                     time.sleep(2)
                 
-                try:
-                    status_dropdown = WebDriverWait(driver, 10).until(
-                        EC.element_to_be_clickable((By.ID, "select2-ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_cmbSituacaoTurma-container"))
-                    )
-                    click_element(driver, status_dropdown)
-                except TimeoutException:
-                    print("Status dropdown not clickable")
-                    driver.quit()
-                    continue
-                time.sleep(1)
+                # try:
+                #     status_dropdown = WebDriverWait(driver, 10).until(
+                #         EC.element_to_be_clickable((By.ID, "select2-ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_cmbSituacaoTurma-container"))
+                #     )
+                #     click_element(driver, status_dropdown)
+                # except TimeoutException:
+                #     print("Status dropdown not clickable")
+                #     driver.quit()
+                #     continue
+                # time.sleep(1)
 
-                active_status = driver.find_element(By.XPATH, "//*[text()='Vigente']")
-                active_status.click()
-                time.sleep(5)
+                # active_status = driver.find_element(By.XPATH, "//*[text()='Vigente']")
+                # active_status.click()
+                # time.sleep(5)
 
                 day_of_week_select = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_divDiaSemana")
                 day_of_week_select.click()
@@ -355,6 +360,17 @@ while current_date <= end_date_range:
                     data['Curso'] = data['Nome'].apply(detectar_curso)
                     data['Sede'] = head_office
 
+                    data['Frequentes'] = pd.to_numeric(data['Frequentes'], errors='coerce')
+                    data['Não Frequentes'] = pd.to_numeric(data['Não Frequentes'], errors='coerce')
+
+                    condicao_remover = (
+                        ((data['Frequentes'] == 0) & (data['Não Frequentes'] == 0)) |
+                        ((data['Frequentes'] == 0) & (data['Não Frequentes'].isin([1, 2]))) |
+                        ((data['Não Frequentes'] == 0) & (data['Frequentes'].isin([1, 2])))
+                    )
+
+                    data = data[~condicao_remover]
+
                     selected_columns = [
                         'Data', 'Nome', 'Curso', 'Professor', 'Vagas', 'Integrantes',
                         'Trancados', 'Horario', 'Não Frequentes', 'Frequentes', 'Dias da Semana', 'Sede'
@@ -369,7 +385,6 @@ while current_date <= end_date_range:
                 except Exception as e:
                     print(f"Erro ao processar a data {current_date.strftime('%d/%m/%Y')}: {str(e)}")
                 finally:
-                    current_date += timedelta(days=1)
                     try:
                         driver.quit()
                     except:
@@ -377,6 +392,7 @@ while current_date <= end_date_range:
             except Exception as e:
                 print(f"Erro ao processar a data {current_date.strftime('%d/%m/%Y')}: {str(e)}")
                 driver.quit()
+    current_date += timedelta(days=1)
 
 print("Download process completed.")
 
