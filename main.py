@@ -91,7 +91,7 @@ else:
     download_dir = "/tmp"
 
 hoje = datetime.today()
-start_date_range = hoje - timedelta(days=11)
+start_date_range = hoje - timedelta(days=9)
 end_date_range = hoje - timedelta(days=2)
 
 current_date = start_date_range
@@ -117,8 +117,8 @@ while current_date <= end_date_range:
             }
             chrome_options.add_experimental_option("prefs", prefs)
             chrome_options.add_argument("--start-maximized")
-            chrome_options.add_argument('--headless=new')
-            chrome_options.add_argument('--no-sandbox')
+            # chrome_options.add_argument('--headless=new')
+            # chrome_options.add_argument('--no-sandbox')
             chrome_options.add_argument('--disable-dev-shm-usage')
             chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
 
@@ -400,199 +400,199 @@ if combined_data:
     final_df = pd.concat(combined_data)
     final_output_path = os.path.join(current_dir, 'combined_data.xlsx')
     final_df.to_excel(final_output_path, index=False)
-    print(f"Combined data saved to {final_output_path}")
+    print(f"Combined data saved to {final_output_path}  ")
 else:
     print("No data to save.")
     exit()
 
-input_file = 'combined_data.xlsx'
-df = pd.read_excel(input_file)
+# input_file = 'combined_data.xlsx'
+# df = pd.read_excel(input_file)
 
-df.rename(columns={
-    "Nome": "Turma",
-    "Frequentes": "Frequente",
-}, inplace=True)
+# df.rename(columns={
+#     "Nome": "Turma",
+#     "Frequentes": "Frequente",
+# }, inplace=True)
 
-df = df[~df['Turma'].astype(str).str.startswith('GT')]
+# df = df[~df['Turma'].astype(str).str.startswith('GT')]
 
-colunas_numericas = ['Vagas', 'Integrantes', 'Trancados', 'Frequente', 'Não Frequentes']
-for coluna in colunas_numericas:
-    df[coluna] = pd.to_numeric(df[coluna], errors='coerce')
+# colunas_numericas = ['Vagas', 'Integrantes', 'Trancados', 'Frequente', 'Não Frequentes']
+# for coluna in colunas_numericas:
+#     df[coluna] = pd.to_numeric(df[coluna], errors='coerce')
 
-if 'Turma' not in df.columns or 'Data' not in df.columns:
-    print("Colunas 'Turma' e 'Data' são necessárias.")
-    exit()
+# if 'Turma' not in df.columns or 'Data' not in df.columns:
+#     print("Colunas 'Turma' e 'Data' são necessárias.")
+#     exit()
 
-df_online = df[df['Turma'].astype(str).str[2].str.upper() == 'L']
-df_presencial = df[df['Turma'].astype(str).str[2].str.upper() != 'L']
+# df_online = df[df['Turma'].astype(str).str[2].str.upper() == 'L']
+# df_presencial = df[df['Turma'].astype(str).str[2].str.upper() != 'L']
 
-scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-creds = ServiceAccountCredentials.from_json_keyfile_name(credentials_json, scope)
-client = gspread.authorize(creds)
+# scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+# creds = ServiceAccountCredentials.from_json_keyfile_name(credentials_json, scope)
+# client = gspread.authorize(creds)
 
-GOOGLE_SHEET_ID = '1OAc-A6bJ0J1wRz-mnv-BVtOH9V93Vk_bs43Edhy8-fc'
-sheet = client.open_by_key(GOOGLE_SHEET_ID)
-sheet_presencial = sheet.get_worksheet(0)
-sheet_online = sheet.get_worksheet(1)
+# GOOGLE_SHEET_ID = '1OAc-A6bJ0J1wRz-mnv-BVtOH9V93Vk_bs43Edhy8-fc'
+# sheet = client.open_by_key(GOOGLE_SHEET_ID)
+# sheet_presencial = sheet.get_worksheet(0)
+# sheet_online = sheet.get_worksheet(1)
 
-def atualizar_linhas(sheet_destino, df_novos):
-    valores_existentes = sheet_destino.get_all_values()
+# def atualizar_linhas(sheet_destino, df_novos):
+#     valores_existentes = sheet_destino.get_all_values()
 
-    if len(valores_existentes) < 2:
-        print("A planilha precisa ter ao menos duas linhas de cabeçalho.")
-        return
+#     if len(valores_existentes) < 2:
+#         print("A planilha precisa ter ao menos duas linhas de cabeçalho.")
+#         return
 
-    cabecalho = valores_existentes[0]
-    dados_existentes = valores_existentes[1:]
+#     cabecalho = valores_existentes[0]
+#     dados_existentes = valores_existentes[1:]
 
-    try:
-        idx_data = cabecalho.index("Data")
-        idx_turma = cabecalho.index("Turma")
-    except ValueError as e:
-        print(f"Erro ao localizar colunas: {e}")
-        return
+#     try:
+#         idx_data = cabecalho.index("Data")
+#         idx_turma = cabecalho.index("Turma")
+#     except ValueError as e:
+#         print(f"Erro ao localizar colunas: {e}")
+#         return
 
-    index_map = {
-        (linha[idx_data], linha[idx_turma]): idx + 3
-        for idx, linha in enumerate(dados_existentes)
-    }
+#     index_map = {
+#         (linha[idx_data], linha[idx_turma]): idx + 3
+#         for idx, linha in enumerate(dados_existentes)
+#     }
 
-    colunas_planilha = {col: idx for idx, col in enumerate(cabecalho)}
+#     colunas_planilha = {col: idx for idx, col in enumerate(cabecalho)}
 
-    for _, row in df_novos.iterrows():
-        row = row.fillna('')
-        chave = (str(row['Data']), str(row['Turma']))
-        valores = row.tolist()
+#     for _, row in df_novos.iterrows():
+#         row = row.fillna('')
+#         chave = (str(row['Data']), str(row['Turma']))
+#         valores = row.tolist()
 
-        if chave in index_map:
-            linha_idx = index_map[chave]
-            cell_range = sheet_destino.range(linha_idx, 1, linha_idx, len(cabecalho))
-            for i, cell in enumerate(cell_range):
-                if i < len(valores):
-                    coluna_nome = cabecalho[i]
+#         if chave in index_map:
+#             linha_idx = index_map[chave]
+#             cell_range = sheet_destino.range(linha_idx, 1, linha_idx, len(cabecalho))
+#             for i, cell in enumerate(cell_range):
+#                 if i < len(valores):
+#                     coluna_nome = cabecalho[i]
 
-                    if coluna_nome == "Data" and isinstance(valores[i], (pd.Timestamp, date)):
-                        cell.value = valores[i].strftime("%d/%m/%Y")
-                    elif coluna_nome in colunas_numericas:
-                        cell.value = int(valores[i]) if pd.notna(valores[i]) else ''
-                    else:
-                        cell.value = str(valores[i])
-                else:
-                    cell.value = ''
-            sheet_destino.update_cells(cell_range)
-            print(f"Atualizado: {chave}")
-        else:
-            sheet_destino.append_row(valores)
-            print(f"Inserido: {chave}")
+#                     if coluna_nome == "Data" and isinstance(valores[i], (pd.Timestamp, date)):
+#                         cell.value = valores[i].strftime("%d/%m/%Y")
+#                     elif coluna_nome in colunas_numericas:
+#                         cell.value = int(valores[i]) if pd.notna(valores[i]) else ''
+#                     else:
+#                         cell.value = str(valores[i])
+#                 else:
+#                     cell.value = ''
+#             sheet_destino.update_cells(cell_range)
+#             print(f"Atualizado: {chave}")
+#         else:
+#             sheet_destino.append_row(valores)
+#             print(f"Inserido: {chave}")
 
-        time.sleep(1)
+#         time.sleep(1)
 
-atualizar_linhas(sheet_presencial, df_presencial)
+# atualizar_linhas(sheet_presencial, df_presencial)
 
-service = build('sheets', 'v4', credentials=creds)
+# service = build('sheets', 'v4', credentials=creds)
 
-requests = [
-    {
-        "repeatCell": {
-            "range": {
-                "sheetId": sheet_presencial._properties['sheetId'],
-                "startColumnIndex": 0,
-                "endColumnIndex": 1
-            },
-            "cell": {
-                "userEnteredFormat": {
-                    "numberFormat": {
-                        "type": "DATE",
-                        "pattern": "dd/MM/yyyy"
-                    }
-                }
-            },
-            "fields": "userEnteredFormat.numberFormat"
-        }
-    },
-]
+# requests = [
+#     {
+#         "repeatCell": {
+#             "range": {
+#                 "sheetId": sheet_presencial._properties['sheetId'],
+#                 "startColumnIndex": 0,
+#                 "endColumnIndex": 1
+#             },
+#             "cell": {
+#                 "userEnteredFormat": {
+#                     "numberFormat": {
+#                         "type": "DATE",
+#                         "pattern": "dd/MM/yyyy"
+#                     }
+#                 }
+#             },
+#             "fields": "userEnteredFormat.numberFormat"
+#         }
+#     },
+# ]
 
-for col in [4, 5, 6, 8, 9]:
-    requests.append({
-        "repeatCell": {
-            "range": {
-                "sheetId": sheet_presencial._properties['sheetId'],
-                "startColumnIndex": col,
-                "endColumnIndex": col + 1
-            },
-            "cell": {
-                "userEnteredFormat": {
-                    "numberFormat": {
-                        "type": "NUMBER",
-                        "pattern": "0"
-                    }
-                }
-            },
-            "fields": "userEnteredFormat.numberFormat"
-        }
-    })
+# for col in [4, 5, 6, 8, 9]:
+#     requests.append({
+#         "repeatCell": {
+#             "range": {
+#                 "sheetId": sheet_presencial._properties['sheetId'],
+#                 "startColumnIndex": col,
+#                 "endColumnIndex": col + 1
+#             },
+#             "cell": {
+#                 "userEnteredFormat": {
+#                     "numberFormat": {
+#                         "type": "NUMBER",
+#                         "pattern": "0"
+#                     }
+#                 }
+#             },
+#             "fields": "userEnteredFormat.numberFormat"
+#         }
+#     })
 
-body = {"requests": requests}
+# body = {"requests": requests}
 
-service.spreadsheets().batchUpdate(
-    spreadsheetId=GOOGLE_SHEET_ID,
-    body=body
-).execute()
+# service.spreadsheets().batchUpdate(
+#     spreadsheetId=GOOGLE_SHEET_ID,
+#     body=body
+# ).execute()
 
-print("Formatação aplicada na planilha presencial.")
+# print("Formatação aplicada na planilha presencial.")
 
-atualizar_linhas(sheet_online, df_online)
+# atualizar_linhas(sheet_online, df_online)
 
-service = build('sheets', 'v4', credentials=creds)
+# service = build('sheets', 'v4', credentials=creds)
 
-requests = [
-    {
-        "repeatCell": {
-            "range": {
-                "sheetId": sheet_online._properties['sheetId'],
-                "startColumnIndex": 0,
-                "endColumnIndex": 1
-            },
-            "cell": {
-                "userEnteredFormat": {
-                    "numberFormat": {
-                        "type": "DATE",
-                        "pattern": "dd/MM/yyyy"
-                    }
-                }
-            },
-            "fields": "userEnteredFormat.numberFormat"
-        }
-    },
-]
+# requests = [
+#     {
+#         "repeatCell": {
+#             "range": {
+#                 "sheetId": sheet_online._properties['sheetId'],
+#                 "startColumnIndex": 0,
+#                 "endColumnIndex": 1
+#             },
+#             "cell": {
+#                 "userEnteredFormat": {
+#                     "numberFormat": {
+#                         "type": "DATE",
+#                         "pattern": "dd/MM/yyyy"
+#                     }
+#                 }
+#             },
+#             "fields": "userEnteredFormat.numberFormat"
+#         }
+#     },
+# ]
 
-for col in [4, 5, 6, 8, 9]:
-    requests.append({
-        "repeatCell": {
-            "range": {
-                "sheetId": sheet_online._properties['sheetId'],
-                "startColumnIndex": col,
-                "endColumnIndex": col + 1
-            },
-            "cell": {
-                "userEnteredFormat": {
-                    "numberFormat": {
-                        "type": "NUMBER",
-                        "pattern": "0"
-                    }
-                }
-            },
-            "fields": "userEnteredFormat.numberFormat"
-        }
-    })
+# for col in [4, 5, 6, 8, 9]:
+#     requests.append({
+#         "repeatCell": {
+#             "range": {
+#                 "sheetId": sheet_online._properties['sheetId'],
+#                 "startColumnIndex": col,
+#                 "endColumnIndex": col + 1
+#             },
+#             "cell": {
+#                 "userEnteredFormat": {
+#                     "numberFormat": {
+#                         "type": "NUMBER",
+#                         "pattern": "0"
+#                     }
+#                 }
+#             },
+#             "fields": "userEnteredFormat.numberFormat"
+#         }
+#     })
 
-body = {"requests": requests}
+# body = {"requests": requests}
 
-service.spreadsheets().batchUpdate(
-    spreadsheetId=GOOGLE_SHEET_ID,
-    body=body
-).execute()
+# service.spreadsheets().batchUpdate(
+#     spreadsheetId=GOOGLE_SHEET_ID,
+#     body=body
+# ).execute()
 
-print("Formatação aplicada na planilha online.")
+# print("Formatação aplicada na planilha online.")
 
-print("Dados atualizados com sucesso.")
+# print("Dados atualizados com sucesso.")
