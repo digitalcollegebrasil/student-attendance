@@ -405,194 +405,252 @@ else:
     print("No data to save.")
     exit()
 
-# input_file = 'combined_data.xlsx'
-# df = pd.read_excel(input_file)
+input_file = 'combined_data.xlsx'
+df = pd.read_excel(input_file)
 
-# df.rename(columns={
-#     "Nome": "Turma",
-#     "Frequentes": "Frequente",
-# }, inplace=True)
+df.rename(columns={
+    "Nome": "Turma",
+    "Frequentes": "Frequente",
+}, inplace=True)
 
-# df = df[~df['Turma'].astype(str).str.startswith('GT')]
+df = df[~df['Turma'].astype(str).str.startswith('GT')]
 
-# colunas_numericas = ['Vagas', 'Integrantes', 'Trancados', 'Frequente', 'Não Frequentes']
-# for coluna in colunas_numericas:
-#     df[coluna] = pd.to_numeric(df[coluna], errors='coerce')
+colunas_numericas = ['Vagas', 'Integrantes', 'Trancados', 'Frequente', 'Não Frequentes']
+for coluna in colunas_numericas:
+    df[coluna] = pd.to_numeric(df[coluna], errors='coerce')
 
-# if 'Turma' not in df.columns or 'Data' not in df.columns:
-#     print("Colunas 'Turma' e 'Data' são necessárias.")
-#     exit()
+if 'Turma' not in df.columns or 'Data' not in df.columns:
+    print("Colunas 'Turma' e 'Data' são necessárias.")
+    exit()
 
-# df_online = df[df['Turma'].astype(str).str[2].str.upper() == 'L']
-# df_presencial = df[df['Turma'].astype(str).str[2].str.upper() != 'L']
+df_online = df[df['Turma'].astype(str).str[2].str.upper() == 'L']
+df_presencial = df[df['Turma'].astype(str).str[2].str.upper() != 'L']
 
-# scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
-# creds = ServiceAccountCredentials.from_json_keyfile_name(credentials_json, scope)
-# client = gspread.authorize(creds)
+# === AUTENTICAÇÃO ===
+scope_rw = ["https://www.googleapis.com/auth/spreadsheets"]
+scope_ro = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+creds_rw = ServiceAccountCredentials.from_json_keyfile_name(credentials_json, scope_rw)
+creds_ro = ServiceAccountCredentials.from_json_keyfile_name(credentials_json, scope_ro)
 
-# GOOGLE_SHEET_ID = '1OAc-A6bJ0J1wRz-mnv-BVtOH9V93Vk_bs43Edhy8-fc'
-# sheet = client.open_by_key(GOOGLE_SHEET_ID)
-# sheet_presencial = sheet.get_worksheet(0)
-# sheet_online = sheet.get_worksheet(1)
+client = gspread.authorize(creds_rw)
+service_ro = build("sheets", "v4", credentials=creds_ro)
+service_rw = build("sheets", "v4", credentials=creds_rw)
 
-# def atualizar_linhas(sheet_destino, df_novos):
-#     valores_existentes = sheet_destino.get_all_values()
+GOOGLE_SHEET_ID = '1OAc-A6bJ0J1wRz-mnv-BVtOH9V93Vk_bs43Edhy8-fc'
+sheet = client.open_by_key(GOOGLE_SHEET_ID)
+sheet_presencial = sheet.get_worksheet(0)
+sheet_online = sheet.get_worksheet(1)
 
-#     if len(valores_existentes) < 2:
-#         print("A planilha precisa ter ao menos duas linhas de cabeçalho.")
-#         return
+def atualizar_linhas(sheet_destino, df_novos):
+    valores_existentes = sheet_destino.get_all_values()
 
-#     cabecalho = valores_existentes[0]
-#     dados_existentes = valores_existentes[1:]
+    if len(valores_existentes) < 2:
+        print("A planilha precisa ter ao menos duas linhas de cabeçalho.")
+        return
 
-#     try:
-#         idx_data = cabecalho.index("Data")
-#         idx_turma = cabecalho.index("Turma")
-#     except ValueError as e:
-#         print(f"Erro ao localizar colunas: {e}")
-#         return
+    cabecalho = valores_existentes[0]
+    dados_existentes = valores_existentes[1:]
 
-#     index_map = {
-#         (linha[idx_data], linha[idx_turma]): idx + 3
-#         for idx, linha in enumerate(dados_existentes)
-#     }
+    try:
+        idx_data = cabecalho.index("Data")
+        idx_turma = cabecalho.index("Turma")
+    except ValueError as e:
+        print(f"Erro ao localizar colunas: {e}")
+        return
 
-#     colunas_planilha = {col: idx for idx, col in enumerate(cabecalho)}
+    index_map = {
+        (linha[idx_data], linha[idx_turma]): idx + 3
+        for idx, linha in enumerate(dados_existentes)
+    }
 
-#     for _, row in df_novos.iterrows():
-#         row = row.fillna('')
-#         chave = (str(row['Data']), str(row['Turma']))
-#         valores = row.tolist()
+    colunas_planilha = {col: idx for idx, col in enumerate(cabecalho)}
 
-#         if chave in index_map:
-#             linha_idx = index_map[chave]
-#             cell_range = sheet_destino.range(linha_idx, 1, linha_idx, len(cabecalho))
-#             for i, cell in enumerate(cell_range):
-#                 if i < len(valores):
-#                     coluna_nome = cabecalho[i]
+    for _, row in df_novos.iterrows():
+        row = row.fillna('')
+        chave = (str(row['Data']), str(row['Turma']))
+        valores = row.tolist()
 
-#                     if coluna_nome == "Data" and isinstance(valores[i], (pd.Timestamp, date)):
-#                         cell.value = valores[i].strftime("%d/%m/%Y")
-#                     elif coluna_nome in colunas_numericas:
-#                         cell.value = int(valores[i]) if pd.notna(valores[i]) else ''
-#                     else:
-#                         cell.value = str(valores[i])
-#                 else:
-#                     cell.value = ''
-#             sheet_destino.update_cells(cell_range)
-#             print(f"Atualizado: {chave}")
-#         else:
-#             sheet_destino.append_row(valores)
-#             print(f"Inserido: {chave}")
+        if chave in index_map:
+            linha_idx = index_map[chave]
+            cell_range = sheet_destino.range(linha_idx, 1, linha_idx, len(cabecalho))
+            for i, cell in enumerate(cell_range):
+                if i < len(valores):
+                    coluna_nome = cabecalho[i]
 
-#         time.sleep(1)
+                    if coluna_nome == "Data" and isinstance(valores[i], (pd.Timestamp, date)):
+                        cell.value = valores[i].strftime("%d/%m/%Y")
+                    elif coluna_nome in colunas_numericas:
+                        cell.value = int(valores[i]) if pd.notna(valores[i]) else ''
+                    else:
+                        cell.value = str(valores[i])
+                else:
+                    cell.value = ''
+            sheet_destino.update_cells(cell_range)
+            print(f"Atualizado: {chave}")
+        else:
+            sheet_destino.append_row(valores)
+            print(f"Inserido: {chave}")
 
-# atualizar_linhas(sheet_presencial, df_presencial)
+        time.sleep(1)
 
-# service = build('sheets', 'v4', credentials=creds)
+# Atualiza presencial
+atualizar_linhas(sheet_presencial, df_presencial)
 
-# requests = [
-#     {
-#         "repeatCell": {
-#             "range": {
-#                 "sheetId": sheet_presencial._properties['sheetId'],
-#                 "startColumnIndex": 0,
-#                 "endColumnIndex": 1
-#             },
-#             "cell": {
-#                 "userEnteredFormat": {
-#                     "numberFormat": {
-#                         "type": "DATE",
-#                         "pattern": "dd/MM/yyyy"
-#                     }
-#                 }
-#             },
-#             "fields": "userEnteredFormat.numberFormat"
-#         }
-#     },
-# ]
+# Atualiza online
+atualizar_linhas(sheet_online, df_online)
 
-# for col in [4, 5, 6, 8, 9]:
-#     requests.append({
-#         "repeatCell": {
-#             "range": {
-#                 "sheetId": sheet_presencial._properties['sheetId'],
-#                 "startColumnIndex": col,
-#                 "endColumnIndex": col + 1
-#             },
-#             "cell": {
-#                 "userEnteredFormat": {
-#                     "numberFormat": {
-#                         "type": "NUMBER",
-#                         "pattern": "0"
-#                     }
-#                 }
-#             },
-#             "fields": "userEnteredFormat.numberFormat"
-#         }
-#     })
+# === TIPOS IDEAIS ===
+tipos_ideais = {
+    1: "DATE", 2: "STRING", 3: "STRING", 4: "STRING",
+    5: "NUMBER", 6: "NUMBER", 7: "NUMBER", 8: "STRING",
+    9: "NUMBER", 10: "NUMBER", 11: "STRING", 12: "STRING"
+}
 
-# body = {"requests": requests}
+# === PASSO 1: Detectar linhas erradas ===
+result = service_ro.spreadsheets().get(
+    spreadsheetId=GOOGLE_SHEET_ID,
+    includeGridData=True
+).execute()
 
-# service.spreadsheets().batchUpdate(
-#     spreadsheetId=GOOGLE_SHEET_ID,
-#     body=body
-# ).execute()
+rows = result["sheets"][0]["data"][0]["rowData"]
+linhas_erradas = []
 
-# print("Formatação aplicada na planilha presencial.")
+for r_idx, row in enumerate(rows, start=1):
+    if r_idx == 1:  # pula cabeçalho
+        continue
+    if "values" not in row:
+        continue
 
-# atualizar_linhas(sheet_online, df_online)
+    erros = []
+    for c_idx, cell in enumerate(row["values"], start=1):
+        user_value = cell.get("userEnteredValue", {})
+        effective_value = cell.get("effectiveValue", {})
+        number_format = cell.get("userEnteredFormat", {}).get("numberFormat", {})
 
-# service = build('sheets', 'v4', credentials=creds)
+        if "numberValue" in effective_value:
+            tipo = number_format.get("type", "NUMBER")
+            if number_format.get("type") == "DATE":
+                tipo = "DATE"
+        elif "stringValue" in effective_value:
+            tipo = "STRING"
+        elif "boolValue" in effective_value:
+            tipo = "BOOLEAN"
+        elif "formulaValue" in user_value:
+            tipo = "FORMULA"
+        else:
+            tipo = "VAZIO"
 
-# requests = [
-#     {
-#         "repeatCell": {
-#             "range": {
-#                 "sheetId": sheet_online._properties['sheetId'],
-#                 "startColumnIndex": 0,
-#                 "endColumnIndex": 1
-#             },
-#             "cell": {
-#                 "userEnteredFormat": {
-#                     "numberFormat": {
-#                         "type": "DATE",
-#                         "pattern": "dd/MM/yyyy"
-#                     }
-#                 }
-#             },
-#             "fields": "userEnteredFormat.numberFormat"
-#         }
-#     },
-# ]
+        if c_idx in tipos_ideais:
+            if tipo != tipos_ideais[c_idx] and tipo != "VAZIO":
+                erros.append((c_idx, tipo))
 
-# for col in [4, 5, 6, 8, 9]:
-#     requests.append({
-#         "repeatCell": {
-#             "range": {
-#                 "sheetId": sheet_online._properties['sheetId'],
-#                 "startColumnIndex": col,
-#                 "endColumnIndex": col + 1
-#             },
-#             "cell": {
-#                 "userEnteredFormat": {
-#                     "numberFormat": {
-#                         "type": "NUMBER",
-#                         "pattern": "0"
-#                     }
-#                 }
-#             },
-#             "fields": "userEnteredFormat.numberFormat"
-#         }
-#     })
+    if erros:
+        print(f"⚠️ Linha {r_idx} divergente → {erros}")
+        linhas_erradas.append(r_idx)
 
-# body = {"requests": requests}
+# === PASSO 2: Corrigir apenas linhas erradas ===
+def corrigir_linhas(sheet_destino, linhas_alvo):
+    valores_existentes = sheet_destino.get_all_values()
+    updates = []
 
-# service.spreadsheets().batchUpdate(
-#     spreadsheetId=GOOGLE_SHEET_ID,
-#     body=body
-# ).execute()
+    for idx in linhas_alvo:
+        linha = valores_existentes[idx-1]
+        data = linha[0]
+        numero = linha[8] if len(linha) >= 9 else None
 
-# print("Formatação aplicada na planilha online.")
+        valores_corrigidos = linha.copy()
+        update_needed = False
 
-# print("Dados atualizados com sucesso.")
+        # Corrigir data (coluna 1 → deve virar string no formato dd/MM/yyyy)
+        if data:
+            try:
+                dt = datetime.strptime(data, "%d/%m/%Y")
+                valores_corrigidos[0] = dt.strftime("%d/%m/%Y")
+                update_needed = True
+            except:
+                pass
+
+        # Corrigir número (coluna 9 → deve virar número de verdade)
+        if numero and numero.isdigit():
+            valores_corrigidos[8] = int(numero)
+            update_needed = True
+
+        if update_needed:
+            print(f"🔧 Preparando correção linha {idx}...")
+            updates.append((idx, valores_corrigidos))
+
+    if updates:
+        data = {
+            "valueInputOption": "USER_ENTERED",  # força Sheets interpretar
+            "data": []
+        }
+        for idx, valores_corrigidos in updates:
+            data["data"].append({
+                "range": f"A{idx}:Z{idx}",
+                "values": [valores_corrigidos]
+            })
+
+        service_rw.spreadsheets().values().batchUpdate(
+            spreadsheetId=GOOGLE_SHEET_ID,
+            body=data
+        ).execute()
+
+        print("✅ Correções aplicadas com tipagem do Google Sheets")
+
+# === PASSO 3: Forçar formatação das colunas ===
+def aplicar_formatacoes(worksheet):
+    requests = [
+        {   # Coluna A → DATE
+            "repeatCell": {
+                "range": {
+                    "sheetId": worksheet.id,   # 👈 sheet específico
+                    "startColumnIndex": 0,
+                    "endColumnIndex": 1
+                },
+                "cell": {
+                    "userEnteredFormat": {
+                        "numberFormat": {
+                            "type": "DATE",
+                            "pattern": "dd/MM/yyyy"
+                        }
+                    }
+                },
+                "fields": "userEnteredFormat.numberFormat"
+            }
+        },
+        {   # Coluna 9 → NUMBER inteiro
+            "repeatCell": {
+                "range": {
+                    "sheetId": worksheet.id,   # 👈 sheet específico
+                    "startColumnIndex": 8,
+                    "endColumnIndex": 9
+                },
+                "cell": {
+                    "userEnteredFormat": {
+                        "numberFormat": {
+                            "type": "NUMBER",
+                            "pattern": "0"
+                        }
+                    }
+                },
+                "fields": "userEnteredFormat.numberFormat"
+            }
+        }
+    ]
+
+    service_rw.spreadsheets().batchUpdate(
+        spreadsheetId=GOOGLE_SHEET_ID,
+        body={"requests": requests}
+    ).execute()
+
+    print(f"📅 Formatação aplicada na aba: {worksheet.title}")
+
+# === EXECUTAR ===
+if linhas_erradas:
+    corrigir_linhas(sheet_presencial, linhas_erradas)
+    corrigir_linhas(sheet_online, linhas_erradas)
+    aplicar_formatacoes(sheet_presencial)
+    aplicar_formatacoes(sheet_online)
+    print("✅ Linhas corrigidas e formatação aplicada em ambas as abas!")
+else:
+    print("✅ Nenhuma linha precisa de correção!")
