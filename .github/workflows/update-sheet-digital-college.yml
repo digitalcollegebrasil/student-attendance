@@ -13,6 +13,7 @@ jobs:
       GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
       SPONTE_EMAIL: ${{ secrets.SPONTE_EMAIL }}
       SPONTE_PASSWORD: ${{ secrets.SPONTE_PASSWORD }}
+      GITHUB_ACTIONS: true
 
     steps:
       - name: Checkout do repositório
