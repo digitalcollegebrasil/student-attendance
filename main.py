@@ -519,7 +519,7 @@ rows = result["sheets"][0]["data"][0]["rowData"]
 linhas_erradas = []
 
 for r_idx, row in enumerate(rows, start=1):
-    if r_idx == 1:  # pula cabeçalho
+    if r_idx == 1:
         continue
     if "values" not in row:
         continue
@@ -564,7 +564,6 @@ def corrigir_linhas(sheet_destino, linhas_alvo):
         valores_corrigidos = linha.copy()
         update_needed = False
 
-        # Corrigir data (coluna 1 → deve virar string no formato dd/MM/yyyy)
         if data:
             try:
                 dt = datetime.strptime(data, "%d/%m/%Y")
@@ -573,7 +572,6 @@ def corrigir_linhas(sheet_destino, linhas_alvo):
             except:
                 pass
 
-        # Corrigir número (coluna 9 → deve virar número de verdade)
         if numero and numero.isdigit():
             valores_corrigidos[8] = int(numero)
             update_needed = True
@@ -584,7 +582,7 @@ def corrigir_linhas(sheet_destino, linhas_alvo):
 
     if updates:
         data = {
-            "valueInputOption": "USER_ENTERED",  # força Sheets interpretar
+            "valueInputOption": "USER_ENTERED",
             "data": []
         }
         for idx, valores_corrigidos in updates:
@@ -603,10 +601,10 @@ def corrigir_linhas(sheet_destino, linhas_alvo):
 # === PASSO 3: Forçar formatação das colunas ===
 def aplicar_formatacoes(worksheet):
     requests = [
-        {   # Coluna A → DATE
+        {
             "repeatCell": {
                 "range": {
-                    "sheetId": worksheet.id,   # 👈 sheet específico
+                    "sheetId": worksheet.id,
                     "startColumnIndex": 0,
                     "endColumnIndex": 1
                 },
@@ -621,10 +619,10 @@ def aplicar_formatacoes(worksheet):
                 "fields": "userEnteredFormat.numberFormat"
             }
         },
-        {   # Coluna 9 → NUMBER inteiro
+        {
             "repeatCell": {
                 "range": {
-                    "sheetId": worksheet.id,   # 👈 sheet específico
+                    "sheetId": worksheet.id,
                     "startColumnIndex": 8,
                     "endColumnIndex": 9
                 },
