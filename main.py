@@ -432,9 +432,68 @@ df_presencial = df[df['Turma'].astype(str).str[2].str.upper() != 'L']
 # === AUTENTICAÇÃO ===
 scope_rw = ["https://www.googleapis.com/auth/spreadsheets"]
 scope_ro = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
-creds_rw = ServiceAccountCredentials.from_json_keyfile_name(credentials_json, scope_rw)
-creds_ro = ServiceAccountCredentials.from_json_keyfile_name(credentials_json, scope_ro)
 
+credentials_raw = os.getenv("GOOGLE_CREDENTIALS_JSON")
+
+def _try_paths():
+    # candidatos comuns para fallback
+    candidates = [
+        os.path.join(current_dir, "credentials.json"),
+        os.path.join(current_dir, "service-account.json"),
+        os.path.expanduser("~/.credentials/credentials.json"),
+        os.path.expanduser("~/.credentials/service-account.json"),
+    ]
+    # evita duplicados mantendo ordem
+    seen, uniq = set(), []
+    for c in candidates:
+        c = os.path.abspath(c)
+        if c not in seen:
+            seen.add(c); uniq.append(c)
+    return [p for p in uniq if os.path.exists(p)]
+
+def build_creds_any(scopes):
+    """
+    1) Se GOOGLE_CREDENTIALS_JSON vier com JSON inline -> usa from_json_keyfile_dict
+    2) Se vier com caminho -> usa from_json_keyfile_name
+    3) Caso contrário -> tenta arquivos locais (credentials.json, etc.)
+    """
+    # Caso 1: env contém JSON inline
+    if credentials_raw and credentials_raw.strip().startswith("{"):
+        try:
+            cred_dict = json.loads(credentials_raw)
+        except json.JSONDecodeError as e:
+            raise RuntimeError(f"GOOGLE_CREDENTIALS_JSON parece JSON mas falhou ao parsear: {e}")
+        return ServiceAccountCredentials.from_json_keyfile_dict(cred_dict, scopes)
+
+    # Caso 2: env contém caminho para o arquivo
+    if credentials_raw and credentials_raw.strip():
+        cred_path = os.path.abspath(credentials_raw.strip())
+        if not os.path.exists(cred_path):
+            raise FileNotFoundError(f"Caminho de credenciais não existe: {cred_path}")
+        return ServiceAccountCredentials.from_json_keyfile_name(cred_path, scopes)
+
+    # Caso 3: fallback para arquivos locais conhecidos
+    tried = []
+    for path in _try_paths():
+        try:
+            return ServiceAccountCredentials.from_json_keyfile_name(path, scopes)
+        except Exception as e:
+            tried.append(f"{path} -> {e}")
+
+    # Se chegou aqui, nada funcionou
+    hints = "\n".join(tried) if tried else "Nenhum arquivo candidato encontrado."
+    raise RuntimeError(
+        "Não encontrei GOOGLE_CREDENTIALS_JSON e o fallback para credentials.json falhou.\n"
+        "Defina a env com o CAMINHO do arquivo ou o CONTEÚDO JSON, "
+        "ou coloque um credentials.json ao lado do script.\n"
+        f"Tentativas:\n{hints}"
+    )
+
+# Cria credenciais RW/RO
+creds_rw = build_creds_any(scope_rw)
+creds_ro = build_creds_any(scope_ro)
+
+# Clientes
 client = gspread.authorize(creds_rw)
 service_ro = build("sheets", "v4", credentials=creds_ro)
 service_rw = build("sheets", "v4", credentials=creds_rw)
