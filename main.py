@@ -612,50 +612,106 @@ for r_idx, row in enumerate(rows, start=1):
 
 # === PASSO 2: Corrigir apenas linhas erradas ===
 def corrigir_linhas(sheet_destino, linhas_alvo):
+    """
+    Corrige tipagem/formatos somente nas linhas indicadas.
+    - Data -> dd/mm/YYYY (USER_ENTERED; o Sheets tipa como DATE)
+    - Numéricos -> int/float (USER_ENTERED; o Sheets tipa como NUMBER)
+    Índices são obtidos via cabeçalho para evitar erros.
+    """
     valores_existentes = sheet_destino.get_all_values()
+    if not valores_existentes:
+        print("Planilha vazia.")
+        return
+
+    cabecalho = valores_existentes[0]
+    nome_to_idx = {nome: i for i, nome in enumerate(cabecalho)}
+
+    # Coluna de data
+    idx_data = nome_to_idx.get("Data", None)
+
+    # Colunas numéricas (suporta 'Frequente' ou 'Frequentes')
+    freq_col = "Frequente" if "Frequente" in nome_to_idx else ("Frequentes" if "Frequentes" in nome_to_idx else None)
+    colunas_numericas_nomes = ["Vagas", "Integrantes", "Trancados", "Não Frequentes"]
+    if freq_col:
+        colunas_numericas_nomes.append(freq_col)
+
+    idxs_numericos = [nome_to_idx[c] for c in colunas_numericas_nomes if c in nome_to_idx]
+
+    # Helper para converter número de coluna (1-based) em letra A1
+    def col_idx_to_a1(n):
+        s = ""
+        while n > 0:
+            n, r = divmod(n - 1, 26)
+            s = chr(65 + r) + s
+        return s
+
+    ultima_col_a1 = col_idx_to_a1(len(cabecalho))
+
     updates = []
 
-    for idx in linhas_alvo:
-        linha = valores_existentes[idx-1]
-        data = linha[0]
-        numero = linha[8] if len(linha) >= 9 else None
+    for linha_google in linhas_alvo:
+        # linhas_alvo vem 1-based (como no Sheets). get_all_values() é 0-based.
+        i = linha_google - 1
+        if i < 0 or i >= len(valores_existentes):
+            continue
 
-        valores_corrigidos = linha.copy()
+        linha = valores_existentes[i]
+        # Garante mesmo comprimento da linha que o cabeçalho
+        if len(linha) < len(cabecalho):
+            linha = linha + [""] * (len(cabecalho) - len(linha))
+
+        valores_corrigidos = list(linha)
         update_needed = False
 
-        if data:
-            try:
-                dt = datetime.strptime(data, "%d/%m/%Y")
-                valores_corrigidos[0] = dt.strftime("%d/%m/%Y")
-                update_needed = True
-            except:
-                pass
+        # --- Corrigir Data ---
+        if idx_data is not None and idx_data < len(valores_corrigidos):
+            raw = valores_corrigidos[idx_data]
+            if raw:
+                dt = pd.to_datetime(raw, dayfirst=True, errors="coerce")
+                if pd.notna(dt):
+                    novo = dt.strftime("%d/%m/%Y")
+                    if novo != raw:
+                        valores_corrigidos[idx_data] = novo
+                        update_needed = True
 
-        if numero and numero.isdigit():
-            valores_corrigidos[8] = int(numero)
-            update_needed = True
+        # --- Corrigir numéricos ---
+        for idx_num in idxs_numericos:
+            if idx_num >= len(valores_corrigidos):
+                continue
+            raw = valores_corrigidos[idx_num]
+            if raw == "" or raw is None:
+                continue
+            # normaliza eventual vírgula decimal
+            num = pd.to_numeric(str(raw).replace(",", "."), errors="coerce")
+            if pd.notna(num):
+                novo = int(num) if float(num).is_integer() else float(num)
+                if str(novo) != str(raw):
+                    valores_corrigidos[idx_num] = novo
+                    update_needed = True
 
         if update_needed:
-            print(f"🔧 Preparando correção linha {idx}...")
-            updates.append((idx, valores_corrigidos))
+            print(f"🔧 Preparando correção linha {linha_google}...")
+            updates.append((linha_google, valores_corrigidos))
 
     if updates:
-        data = {
+        body = {
             "valueInputOption": "USER_ENTERED",
-            "data": []
+            "data": [
+                {
+                    "range": f"A{lin}:"
+                             f"{ultima_col_a1}{lin}",
+                    "values": [vals[:len(cabecalho)]]
+                }
+                for lin, vals in updates
+            ],
         }
-        for idx, valores_corrigidos in updates:
-            data["data"].append({
-                "range": f"A{idx}:Z{idx}",
-                "values": [valores_corrigidos]
-            })
-
         service_rw.spreadsheets().values().batchUpdate(
             spreadsheetId=GOOGLE_SHEET_ID,
-            body=data
+            body=body
         ).execute()
-
         print("✅ Correções aplicadas com tipagem do Google Sheets")
+    else:
+        print("Nenhuma correção necessária para as linhas informadas.")
 
 # === PASSO 3: Forçar formatação das colunas ===
 def aplicar_formatacoes(worksheet):
