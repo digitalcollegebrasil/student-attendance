@@ -16,7 +16,6 @@ import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from googleapiclient.discovery import build
-import platform
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -24,9 +23,9 @@ from email.mime.application import MIMEApplication
 
 load_dotenv()
 
-email_address = os.getenv("SPONTE_EMAIL")
-password_value = os.getenv("SPONTE_PASSWORD")
-credentials_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
+SPONTE_EMAIL = os.getenv("SPONTE_EMAIL")
+SPONTE_PASSWORD = os.getenv("SPONTE_PASSWORD")
+GOOGLE_CREDENTIALS_JSON = os.getenv("GOOGLE_CREDENTIALS_JSON")
 EMAIL_USER = os.getenv("EMAIL_USER")
 EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 
@@ -185,9 +184,9 @@ while current_date <= end_date_range:
                 driver.get("https://www.sponteeducacional.net.br/SPRel/Didatico/Turmas.aspx")
                 
                 email = driver.find_element(By.ID, "txtLogin")
-                email.send_keys(email_address)
+                email.send_keys(SPONTE_EMAIL)
                 password = driver.find_element(By.ID, "txtSenha")
-                password.send_keys(password_value)
+                password.send_keys(SPONTE_PASSWORD)
 
                 login_button = driver.find_element(By.ID, "btnok")
                 login_button.click()
@@ -446,6 +445,17 @@ while current_date <= end_date_range:
                 print(f"Erro ao processar a data {current_date.strftime('%d/%m/%Y')}: {str(e)}")
                 driver.quit()
     current_date += timedelta(days=1)
+
+if combined_data:
+    final_df = pd.concat(combined_data)
+    final_output_path = os.path.join(current_dir, 'combined_data.xlsx')
+    final_df.to_excel(final_output_path, index=False)
+    print(f"Combined data saved to {final_output_path}  ")
+else:
+    pd.DataFrame(columns=[
+        'Data','Nome','Curso','Professor','Vagas','Integrantes','Trancados',
+        'Horario','Não Frequentes','Frequentes','Dias da Semana','Sede'
+    ]).to_excel(COMBINED_PATH, index=False)
 
 print("Download process completed.")
 
