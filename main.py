@@ -17,21 +17,69 @@ import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from googleapiclient.discovery import build
 import platform
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
 
 load_dotenv()
 
 email_address = os.getenv("SPONTE_EMAIL")
 password_value = os.getenv("SPONTE_PASSWORD")
 credentials_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
+EMAIL_USER = os.getenv("EMAIL_USER")
+EMAIL_PASSWORD = os.getenv("EMAIL_PASSWORD")
 
 current_dir = os.path.dirname(__file__)
-download_dir = os.path.join(current_dir, 'downloads')
-base_target_dir = os.path.join(current_dir, 'target')
+DOWNLOAD_TMP = tempfile.mkdtemp(prefix="sponte_dl_")
+TARGET_TMP   = tempfile.mkdtemp(prefix="sponte_target_")
+
+download_dir     = DOWNLOAD_TMP
+base_target_dir  = TARGET_TMP
+COMBINED_PATH = os.path.join(current_dir, 'combined_data.xlsx')
+SHEET_NAME = 'Dados'
+
+if os.path.exists(COMBINED_PATH):
+    os.remove(COMBINED_PATH)
 
 if not os.path.exists(download_dir):
     os.makedirs(download_dir)
 if not os.path.exists(base_target_dir):
     os.makedirs(base_target_dir)
+
+# ============ PARÂMETROS ============
+# lista de destinatários e cc (ajuste como quiser)
+DESTINATARIOS = [
+    "cauan.victor@engajacomunicacao.com.br",
+]
+CC = [
+    "cauan.victor@engajacomunicacao.com.br",
+]
+
+# opcional: quantos dias olhar pra trás (por padrão, pega tudo)
+REPORT_DAYS = int(os.getenv("REPORT_DAYS", "0"))
+
+# ============ FILTRO 100% PRESENÇA ============
+def construir_relatorio_100(df_base: pd.DataFrame) -> pd.DataFrame:
+    # garantir tipos numéricos
+    for c in ["Integrantes", "Frequente", "Não Frequentes"]:
+        df_base[c] = pd.to_numeric(df_base[c], errors="coerce").fillna(0)
+
+    # parse da coluna Data (está em dd/MM/yyyy)
+    df_base["Data_dt"] = pd.to_datetime(df_base["Data"], dayfirst=True, errors="coerce")
+
+    # filtro opcional por período (últimos N dias)
+    if REPORT_DAYS > 0:
+        limite = pd.Timestamp.now(tz="America/Fortaleza").normalize() - pd.Timedelta(days=REPORT_DAYS)
+        df_base = df_base[df_base["Data_dt"] >= limite]
+
+    # regra: ninguém faltou e presentes == integrantes (>0)
+    mask = (df_base["Não Frequentes"] == 0) & (df_base["Frequente"] == df_base["Integrantes"]) & (df_base["Integrantes"] > 0)
+    df100 = df_base.loc[mask, ["Data_dt", "Turma", "Curso", "Professor", "Integrantes", "Horario", "Sede"]].copy()
+
+    # ordenação
+    df100 = df100.sort_values(["Data_dt", "Sede", "Turma"]).reset_index(drop=True)
+    return df100
 
 def remove_value_attribute(driver, element):
     driver.execute_script("arguments[0].removeAttribute('value')", element)
@@ -84,11 +132,6 @@ def detectar_curso(nome_turma):
     elif nome_turma.startswith("GT"):
         return "Geração Tech"
     return ""
-
-if platform.system() == "Windows":
-    download_dir = tempfile.gettempdir()
-else:
-    download_dir = "/tmp"
 
 hoje = datetime.today()
 start_date_range = hoje - timedelta(days=9)
@@ -224,20 +267,20 @@ while current_date <= end_date_range:
                         print("Nenhum elemento <li> encontrado.")
                     time.sleep(2)
                 
-                # try:
-                #     status_dropdown = WebDriverWait(driver, 10).until(
-                #         EC.element_to_be_clickable((By.ID, "select2-ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_cmbSituacaoTurma-container"))
-                #     )
-                #     click_element(driver, status_dropdown)
-                # except TimeoutException:
-                #     print("Status dropdown not clickable")
-                #     driver.quit()
-                #     continue
-                # time.sleep(1)
+                try:
+                    status_dropdown = WebDriverWait(driver, 10).until(
+                        EC.element_to_be_clickable((By.ID, "select2-ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_cmbSituacaoTurma-container"))
+                    )
+                    click_element(driver, status_dropdown)
+                except TimeoutException:
+                    print("Status dropdown not clickable")
+                    driver.quit()
+                    continue
+                time.sleep(1)
 
-                # active_status = driver.find_element(By.XPATH, "//*[text()='Vigente']")
-                # active_status.click()
-                # time.sleep(5)
+                active_status = driver.find_element(By.XPATH, "//*[text()='Vigente']")
+                active_status.click()
+                time.sleep(5)
 
                 day_of_week_select = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_divDiaSemana")
                 day_of_week_select.click()
@@ -354,6 +397,13 @@ while current_date <= end_date_range:
                         data['Frequentes'] = data['Frequente']
                     if 'Dias da Semana' not in data.columns and 'DiasSemana' in data.columns:
                         data['Dias da Semana'] = data['DiasSemana']
+                    if 'DataInicio' not in data.columns and 'Data Início' in data.columns:
+                        data['DataInicio'] = data['Data Início']
+
+                    data['DataInicio'] = pd.to_datetime(data['DataInicio'], dayfirst=True, errors='coerce')
+                    hoje_brt = pd.Timestamp.now(tz='America/Fortaleza').date()
+                    data = data[data['DataInicio'].dt.date <= hoje_brt].copy()
+                    data = data.dropna(subset=['DataInicio'])
 
                     print(f"Nome da turma: {nome_turma}")
                     print(f"Data: {current_date.strftime('%d/%m/%Y')}")
@@ -399,17 +449,79 @@ while current_date <= end_date_range:
 
 print("Download process completed.")
 
-if combined_data:
-    final_df = pd.concat(combined_data)
-    final_output_path = os.path.join(current_dir, 'combined_data.xlsx')
-    final_df.to_excel(final_output_path, index=False)
-    print(f"Combined data saved to {final_output_path}  ")
-else:
-    print("No data to save.")
-    exit()
-
 input_file = 'combined_data.xlsx'
 df = pd.read_excel(input_file)
+
+df_100 = construir_relatorio_100(df)
+
+# salva um anexo com o relatório
+anexo_path = os.path.join(current_dir, "turmas_100_presenca.xlsx")
+if not df_100.empty:
+    temp_to_save = df_100.copy()
+    temp_to_save["Data"] = temp_to_save["Data_dt"].dt.strftime("%d/%m/%Y")
+    temp_to_save.drop(columns=["Data_dt"], inplace=True)
+    temp_to_save.to_excel(anexo_path, index=False)
+else:
+    # se quiser mesmo assim gerar anexo vazio
+    pd.DataFrame(columns=["Data", "Turma", "Curso", "Professor", "Integrantes", "Horario", "Sede"]).to_excel(anexo_path, index=False)
+
+# ============ E-MAIL (SMTP GMAIL) ============
+def enviar_relatorio_turmas_100(df100: pd.DataFrame, to_list, cc_list=None):
+    sender_email = os.getenv("EMAIL_USER")
+    password = os.getenv("EMAIL_PASSWORD")
+    if not sender_email or not password:
+        raise RuntimeError("Defina EMAIL_USER e EMAIL_PASSWORD nas variáveis de ambiente.")
+
+    hoje_brt = pd.Timestamp.now(tz="America/Fortaleza")
+    if df100.empty:
+        assunto = f"[Relatório] Turmas 100% presença — nenhum registro ({hoje_brt:%d/%m/%Y})"
+        corpo_html = f"""
+        <p>Olá,</p>
+        <p>Não foram encontradas turmas com <strong>100% de presença</strong> no período considerado.</p>
+        <p>Data de geração: <strong>{hoje_brt:%d/%m/%Y %H:%M}</strong></p>
+        """
+    else:
+        ultimo_dia = df100["Data_dt"].max()
+        assunto = f"[Relatório] Turmas 100% presença — até {ultimo_dia:%d/%m/%Y}"
+        # tabela HTML
+        tbl = df100.copy()
+        tbl["Data"] = tbl["Data_dt"].dt.strftime("%d/%m/%Y")
+        tbl = tbl[["Data", "Sede", "Turma", "Curso", "Professor", "Integrantes", "Horario"]]
+        tabela_html = tbl.to_html(index=False, border=0, justify="left")
+        corpo_html = f"""
+        <p>Olá,</p>
+        <p>Segue abaixo o relatório de turmas com <strong>100% de presença</strong> (sem faltas):</p>
+        {tabela_html}
+        <p>Anexo: <em>turmas_100_presenca.xlsx</em></p>
+        <p>Gerado em: <strong>{hoje_brt:%d/%m/%Y %H:%M}</strong></p>
+        """
+
+    # monta mensagem
+    msg = MIMEMultipart()
+    msg["From"] = sender_email
+    msg["To"] = ", ".join(to_list)
+    if cc_list:
+        msg["Cc"] = ", ".join(cc_list)
+    msg["Subject"] = assunto
+    msg.attach(MIMEText(corpo_html, "html"))
+
+    # anexo
+    if os.path.exists(anexo_path):
+        with open(anexo_path, "rb") as f:
+            part = MIMEApplication(f.read(), Name=os.path.basename(anexo_path))
+            part["Content-Disposition"] = f'attachment; filename="{os.path.basename(anexo_path)}"'
+            msg.attach(part)
+
+    # envio
+    all_rcpts = list(to_list) + (cc_list or [])
+    with smtplib.SMTP("smtp.gmail.com", 587) as server:
+        server.starttls()
+        server.login(sender_email, password)
+        server.sendmail(sender_email, all_rcpts, msg.as_string())
+
+    print(f"📧 E-mail enviado para: {all_rcpts}")
+
+enviar_relatorio_turmas_100(df_100, DESTINATARIOS, CC)
 
 df.rename(columns={
     "Nome": "Turma",
@@ -550,7 +662,7 @@ def atualizar_linhas(sheet_destino, df_novos):
             sheet_destino.update_cells(cell_range)
             print(f"Atualizado: {chave}")
         else:
-            sheet_destino.append_row(valores)
+            sheet_destino.append_row(valores, value_input_option='USER_ENTERED')
             print(f"Inserido: {chave}")
 
         time.sleep(1)
@@ -613,10 +725,12 @@ for r_idx, row in enumerate(rows, start=1):
 # === PASSO 2: Corrigir apenas linhas erradas ===
 def corrigir_linhas(sheet_destino, linhas_alvo):
     """
-    Corrige tipagem/formatos somente nas linhas indicadas.
-    - Data -> dd/mm/YYYY (USER_ENTERED; o Sheets tipa como DATE)
-    - Numéricos -> int/float (USER_ENTERED; o Sheets tipa como NUMBER)
-    Índices são obtidos via cabeçalho para evitar erros.
+    Reescreve SEMPRE os valores das colunas de Data e Numéricas nas linhas informadas,
+    usando tipos 'USER_ENTERED' que o Sheets reconhece:
+      - Data: YYYY-MM-DD (ISO) para garantir tipagem como DATE
+      - Numéricos: int/float (sem aspas) para garantir NUMBER
+
+    Depois a formatação visual (dd/MM/yyyy e 0) é aplicada via batchUpdate.
     """
     valores_existentes = sheet_destino.get_all_values()
     if not valores_existentes:
@@ -626,10 +740,9 @@ def corrigir_linhas(sheet_destino, linhas_alvo):
     cabecalho = valores_existentes[0]
     nome_to_idx = {nome: i for i, nome in enumerate(cabecalho)}
 
-    # Coluna de data
+    # Índices das colunas
     idx_data = nome_to_idx.get("Data", None)
 
-    # Colunas numéricas (suporta 'Frequente' ou 'Frequentes')
     freq_col = "Frequente" if "Frequente" in nome_to_idx else ("Frequentes" if "Frequentes" in nome_to_idx else None)
     colunas_numericas_nomes = ["Vagas", "Integrantes", "Trancados", "Não Frequentes"]
     if freq_col:
@@ -637,7 +750,7 @@ def corrigir_linhas(sheet_destino, linhas_alvo):
 
     idxs_numericos = [nome_to_idx[c] for c in colunas_numericas_nomes if c in nome_to_idx]
 
-    # Helper para converter número de coluna (1-based) em letra A1
+    # helper A1
     def col_idx_to_a1(n):
         s = ""
         while n > 0:
@@ -650,57 +763,47 @@ def corrigir_linhas(sheet_destino, linhas_alvo):
     updates = []
 
     for linha_google in linhas_alvo:
-        # linhas_alvo vem 1-based (como no Sheets). get_all_values() é 0-based.
         i = linha_google - 1
-        if i < 0 or i >= len(valores_existentes):
+        if i <= 0 or i >= len(valores_existentes):
             continue
 
-        linha = valores_existentes[i]
-        # Garante mesmo comprimento da linha que o cabeçalho
+        linha = list(valores_existentes[i])
         if len(linha) < len(cabecalho):
-            linha = linha + [""] * (len(cabecalho) - len(linha))
+            linha += [""] * (len(cabecalho) - len(linha))
 
-        valores_corrigidos = list(linha)
-        update_needed = False
-
-        # --- Corrigir Data ---
-        if idx_data is not None and idx_data < len(valores_corrigidos):
-            raw = valores_corrigidos[idx_data]
+        # Sempre normaliza: Data -> ISO; Números -> int/float
+        if idx_data is not None and idx_data < len(linha):
+            raw = linha[idx_data]
             if raw:
                 dt = pd.to_datetime(raw, dayfirst=True, errors="coerce")
+                # Se não parsear em pt-BR, tenta ISO também
+                if pd.isna(dt):
+                    dt = pd.to_datetime(raw, errors="coerce")
                 if pd.notna(dt):
-                    novo = dt.strftime("%d/%m/%Y")
-                    if novo != raw:
-                        valores_corrigidos[idx_data] = novo
-                        update_needed = True
+                    # ISO para Sheets tipar como DATE
+                    linha[idx_data] = dt.strftime("%Y-%m-%d")
 
-        # --- Corrigir numéricos ---
         for idx_num in idxs_numericos:
-            if idx_num >= len(valores_corrigidos):
-                continue
-            raw = valores_corrigidos[idx_num]
-            if raw == "" or raw is None:
-                continue
-            # normaliza eventual vírgula decimal
-            num = pd.to_numeric(str(raw).replace(",", "."), errors="coerce")
-            if pd.notna(num):
-                novo = int(num) if float(num).is_integer() else float(num)
-                if str(novo) != str(raw):
-                    valores_corrigidos[idx_num] = novo
-                    update_needed = True
+            if idx_num < len(linha):
+                raw = linha[idx_num]
+                if raw == "" or raw is None:
+                    continue
+                num = pd.to_numeric(str(raw).replace(",", ".").strip(), errors="coerce")
+                if pd.notna(num):
+                    linha[idx_num] = int(num) if float(num).is_integer() else float(num)
+                else:
+                    # se tiver lixo (ex.: "-"), zera ou deixa vazio, conforme sua regra
+                    linha[idx_num] = ""
 
-        if update_needed:
-            print(f"🔧 Preparando correção linha {linha_google}...")
-            updates.append((linha_google, valores_corrigidos))
+        updates.append((linha_google, linha))
 
     if updates:
         body = {
             "valueInputOption": "USER_ENTERED",
             "data": [
                 {
-                    "range": f"A{lin}:"
-                             f"{ultima_col_a1}{lin}",
-                    "values": [vals[:len(cabecalho)]]
+                    "range": f"A{lin}:{ultima_col_a1}{lin}",
+                    "values": [vals[:len(cabecalho)]],
                 }
                 for lin, vals in updates
             ],
@@ -709,50 +812,48 @@ def corrigir_linhas(sheet_destino, linhas_alvo):
             spreadsheetId=GOOGLE_SHEET_ID,
             body=body
         ).execute()
-        print("✅ Correções aplicadas com tipagem do Google Sheets")
+        print("✅ Correções reaplicadas (tipagem) nas linhas divergentes.")
     else:
-        print("Nenhuma correção necessária para as linhas informadas.")
+        print("Nenhuma linha para corrigir.")
 
 # === PASSO 3: Forçar formatação das colunas ===
 def aplicar_formatacoes(worksheet):
-    requests = [
-        {
-            "repeatCell": {
-                "range": {
-                    "sheetId": worksheet.id,
-                    "startColumnIndex": 0,
-                    "endColumnIndex": 1
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "numberFormat": {
-                            "type": "DATE",
-                            "pattern": "dd/MM/yyyy"
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat.numberFormat"
-            }
-        },
-        {
-            "repeatCell": {
-                "range": {
-                    "sheetId": worksheet.id,
-                    "startColumnIndex": 8,
-                    "endColumnIndex": 9
-                },
-                "cell": {
-                    "userEnteredFormat": {
-                        "numberFormat": {
-                            "type": "NUMBER",
-                            "pattern": "0"
-                        }
-                    }
-                },
-                "fields": "userEnteredFormat.numberFormat"
-            }
+    requests = []
+
+    # Coluna A (Data) -> dd/MM/yyyy
+    requests.append({
+        "repeatCell": {
+            "range": {
+                "sheetId": worksheet.id,
+                "startColumnIndex": 0,
+                "endColumnIndex": 1
+            },
+            "cell": {
+                "userEnteredFormat": {
+                    "numberFormat": {"type": "DATE", "pattern": "dd/MM/yyyy"}
+                }
+            },
+            "fields": "userEnteredFormat.numberFormat"
         }
-    ]
+    })
+
+    # Colunas numéricas: E (4), F (5), G (6), I (8), J (9)
+    for start_idx in [4,5,6,8,9]:
+        requests.append({
+            "repeatCell": {
+                "range": {
+                    "sheetId": worksheet.id,
+                    "startColumnIndex": start_idx,
+                    "endColumnIndex": start_idx+1
+                },
+                "cell": {
+                    "userEnteredFormat": {
+                        "numberFormat": {"type": "NUMBER", "pattern": "0"}
+                    }
+                },
+                "fields": "userEnteredFormat.numberFormat"
+            }
+        })
 
     service_rw.spreadsheets().batchUpdate(
         spreadsheetId=GOOGLE_SHEET_ID,
