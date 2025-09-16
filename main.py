@@ -178,8 +178,8 @@ def detectar_curso(nome_turma):
     return ""
 
 hoje = datetime.today()
-start_date_range = hoje - timedelta(days=15)
-end_date_range = hoje - timedelta(days=9)
+start_date_range = hoje - timedelta(days=9)
+end_date_range = hoje - timedelta(days=2)
 
 current_date = start_date_range
 
