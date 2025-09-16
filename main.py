@@ -60,25 +60,70 @@ REPORT_DAYS = int(os.getenv("REPORT_DAYS", "0"))
 
 # ============ FILTRO 100% PRESENÇA ============
 def construir_relatorio_100(df_base: pd.DataFrame) -> pd.DataFrame:
-    # garantir tipos numéricos
-    for c in ["Integrantes", "Frequente", "Não Frequentes"]:
+    cols = set(df_base.columns)
+
+    col_freq  = "Frequente" if "Frequente" in cols else ("Frequentes" if "Frequentes" in cols else None)
+    col_nfreq = "Não Frequentes" if "Não Frequentes" in cols else ("NaoFrequente" if "NaoFrequente" in cols else None)
+    col_turma = "Turma" if "Turma" in cols else ("Nome" if "Nome" in cols else None)
+
+    obrigatorias = {
+        "Integrantes": "Integrantes",
+        "Frequente": col_freq,
+        "Não Frequentes": col_nfreq,
+        "Data": "Data",
+    }
+    faltando = [k for k, v in obrigatorias.items() if v is None or v not in cols]
+    if faltando:
+        raise KeyError(f"Colunas obrigatórias ausentes: {faltando} — tenho {sorted(cols)}")
+
+    for c in ["Integrantes", col_freq, col_nfreq]:
         df_base[c] = pd.to_numeric(df_base[c], errors="coerce").fillna(0)
 
-    # parse da coluna Data (está em dd/MM/yyyy)
     df_base["Data_dt"] = pd.to_datetime(df_base["Data"], dayfirst=True, errors="coerce")
 
-    # filtro opcional por período (últimos N dias)
     if REPORT_DAYS > 0:
         limite = pd.Timestamp.now(tz="America/Fortaleza").normalize() - pd.Timedelta(days=REPORT_DAYS)
         df_base = df_base[df_base["Data_dt"] >= limite]
 
-    # regra: ninguém faltou e presentes == integrantes (>0)
-    mask = (df_base["Não Frequentes"] == 0) & (df_base["Frequente"] == df_base["Integrantes"]) & (df_base["Integrantes"] > 0)
-    df100 = df_base.loc[mask, ["Data_dt", "Turma", "Curso", "Professor", "Integrantes", "Horario", "Sede"]].copy()
+    mask = (df_base[col_nfreq] == 0) & (df_base[col_freq] == df_base["Integrantes"]) & (df_base["Integrantes"] > 0)
 
-    # ordenação
-    df100 = df100.sort_values(["Data_dt", "Sede", "Turma"]).reset_index(drop=True)
+    keep_cols = ["Data_dt", col_turma, "Curso", "Professor", "Integrantes", "Horario", "Sede"]
+    keep_cols = [c for c in keep_cols if c in df_base.columns]
+
+    df100 = df_base.loc[mask, keep_cols].copy()
+
+    # padroniza nome "Turma" na saída
+    if col_turma != "Turma" and col_turma in df100.columns:
+        df100.rename(columns={col_turma: "Turma"}, inplace=True)
+
+    df100 = df100.sort_values(["Data_dt", "Sede", "Turma"], na_position="last").reset_index(drop=True)
     return df100
+
+def _norm_val(valor, coluna_nome, colunas_numericas):
+    # vazios
+    if valor is None or (isinstance(valor, float) and pd.isna(valor)) or (isinstance(valor, str) and valor.strip()==""):
+        return ""
+
+    # Data -> dd/MM/yyyy
+    if coluna_nome == "Data":
+        if isinstance(valor, (pd.Timestamp, datetime, date)):
+            # garante string dd/MM/yyyy
+            if isinstance(valor, datetime):
+                valor = valor.date()
+            return valor.strftime("%d/%m/%Y")
+        # tenta converter string para data
+        dt = pd.to_datetime(str(valor), dayfirst=True, errors="coerce")
+        return dt.strftime("%d/%m/%Y") if pd.notna(dt) else str(valor)
+
+    # Numéricas -> número (int/float) sem aspas
+    if coluna_nome in colunas_numericas:
+        num = pd.to_numeric(str(valor).replace(",", ".").strip(), errors="coerce")
+        if pd.isna(num):
+            return ""
+        return int(num) if float(num).is_integer() else float(num)
+
+    # Demais -> string
+    return str(valor)
 
 def remove_value_attribute(driver, element):
     driver.execute_script("arguments[0].removeAttribute('value')", element)
@@ -133,8 +178,8 @@ def detectar_curso(nome_turma):
     return ""
 
 hoje = datetime.today()
-start_date_range = hoje - timedelta(days=9)
-end_date_range = hoje - timedelta(days=2)
+start_date_range = hoje - timedelta(days=15)
+end_date_range = hoje - timedelta(days=9)
 
 current_date = start_date_range
 
@@ -459,8 +504,17 @@ else:
 
 print("Download process completed.")
 
-input_file = 'combined_data.xlsx'
+input_file = COMBINED_PATH
 df = pd.read_excel(input_file)
+
+df.columns = [c.strip() for c in df.columns]
+df.rename(columns={
+    "Nome": "Turma",
+    "Frequentes": "Frequente",
+    "NaoFrequente": "Não Frequentes",
+    "DiasSemana": "Dias da Semana",
+    "Data Início": "DataInicio",
+}, inplace=True)
 
 df_100 = construir_relatorio_100(df)
 
@@ -672,7 +726,12 @@ def atualizar_linhas(sheet_destino, df_novos):
             sheet_destino.update_cells(cell_range)
             print(f"Atualizado: {chave}")
         else:
-            sheet_destino.append_row(valores, value_input_option='USER_ENTERED')
+            valores_norm = []
+            for i, col_name in enumerate(cabecalho):
+                v = valores[i] if i < len(valores) else ""
+                valores_norm.append(_norm_val(v, col_name, colunas_numericas))
+
+            sheet_destino.append_row(valores_norm, value_input_option='USER_ENTERED')
             print(f"Inserido: {chave}")
 
         time.sleep(1)

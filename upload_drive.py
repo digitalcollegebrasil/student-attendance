@@ -2,12 +2,16 @@ import os
 import time
 import pandas as pd
 from dotenv import load_dotenv
-from datetime import date
+from datetime import datetime, date
 import json
 import pandas as pd
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 from googleapiclient.discovery import build
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.application import MIMEApplication
 
 load_dotenv()
 
@@ -16,9 +20,169 @@ password_value = os.getenv("SPONTE_PASSWORD")
 credentials_json = os.getenv("GOOGLE_CREDENTIALS_JSON")
 
 current_dir = os.path.dirname(__file__)
+COMBINED_PATH = os.path.join(current_dir, 'combined_data.xlsx')
 
-input_file = 'combined_data.xlsx'
+# ============ PARÂMETROS ============
+# lista de destinatários e cc (ajuste como quiser)
+DESTINATARIOS = [
+    "cauan.victor@engajacomunicacao.com.br",
+]
+CC = [
+    "cauan.victor@engajacomunicacao.com.br",
+]
+
+# opcional: quantos dias olhar pra trás (por padrão, pega tudo)
+REPORT_DAYS = int(os.getenv("REPORT_DAYS", "0"))
+
+# ============ FILTRO 100% PRESENÇA ============
+def construir_relatorio_100(df_base: pd.DataFrame) -> pd.DataFrame:
+    cols = set(df_base.columns)
+
+    col_freq  = "Frequente" if "Frequente" in cols else ("Frequentes" if "Frequentes" in cols else None)
+    col_nfreq = "Não Frequentes" if "Não Frequentes" in cols else ("NaoFrequente" if "NaoFrequente" in cols else None)
+    col_turma = "Turma" if "Turma" in cols else ("Nome" if "Nome" in cols else None)
+
+    obrigatorias = {
+        "Integrantes": "Integrantes",
+        "Frequente": col_freq,
+        "Não Frequentes": col_nfreq,
+        "Data": "Data",
+    }
+    faltando = [k for k, v in obrigatorias.items() if v is None or v not in cols]
+    if faltando:
+        raise KeyError(f"Colunas obrigatórias ausentes: {faltando} — tenho {sorted(cols)}")
+
+    for c in ["Integrantes", col_freq, col_nfreq]:
+        df_base[c] = pd.to_numeric(df_base[c], errors="coerce").fillna(0)
+
+    df_base["Data_dt"] = pd.to_datetime(df_base["Data"], dayfirst=True, errors="coerce")
+
+    if REPORT_DAYS > 0:
+        limite = pd.Timestamp.now(tz="America/Fortaleza").normalize() - pd.Timedelta(days=REPORT_DAYS)
+        df_base = df_base[df_base["Data_dt"] >= limite]
+
+    mask = (df_base[col_nfreq] == 0) & (df_base[col_freq] == df_base["Integrantes"]) & (df_base["Integrantes"] > 0)
+
+    keep_cols = ["Data_dt", col_turma, "Curso", "Professor", "Integrantes", "Horario", "Sede"]
+    keep_cols = [c for c in keep_cols if c in df_base.columns]
+
+    df100 = df_base.loc[mask, keep_cols].copy()
+
+    # padroniza nome "Turma" na saída
+    if col_turma != "Turma" and col_turma in df100.columns:
+        df100.rename(columns={col_turma: "Turma"}, inplace=True)
+
+    df100 = df100.sort_values(["Data_dt", "Sede", "Turma"], na_position="last").reset_index(drop=True)
+    return df100
+
+def _norm_val(valor, coluna_nome, colunas_numericas):
+    # vazios
+    if valor is None or (isinstance(valor, float) and pd.isna(valor)) or (isinstance(valor, str) and valor.strip()==""):
+        return ""
+
+    # Data -> dd/MM/yyyy
+    if coluna_nome == "Data":
+        if isinstance(valor, (pd.Timestamp, datetime, date)):
+            # garante string dd/MM/yyyy
+            if isinstance(valor, datetime):
+                valor = valor.date()
+            return valor.strftime("%d/%m/%Y")
+        # tenta converter string para data
+        dt = pd.to_datetime(str(valor), dayfirst=True, errors="coerce")
+        return dt.strftime("%d/%m/%Y") if pd.notna(dt) else str(valor)
+
+    # Numéricas -> número (int/float) sem aspas
+    if coluna_nome in colunas_numericas:
+        num = pd.to_numeric(str(valor).replace(",", ".").strip(), errors="coerce")
+        if pd.isna(num):
+            return ""
+        return int(num) if float(num).is_integer() else float(num)
+
+    # Demais -> string
+    return str(valor)
+
+input_file = COMBINED_PATH
 df = pd.read_excel(input_file)
+
+df.columns = [c.strip() for c in df.columns]
+df.rename(columns={
+    "Nome": "Turma",
+    "Frequentes": "Frequente",
+    "NaoFrequente": "Não Frequentes",
+    "DiasSemana": "Dias da Semana",
+    "Data Início": "DataInicio",
+}, inplace=True)
+
+df_100 = construir_relatorio_100(df)
+
+# salva um anexo com o relatório
+anexo_path = os.path.join(current_dir, "turmas_100_presenca.xlsx")
+if not df_100.empty:
+    temp_to_save = df_100.copy()
+    temp_to_save["Data"] = temp_to_save["Data_dt"].dt.strftime("%d/%m/%Y")
+    temp_to_save.drop(columns=["Data_dt"], inplace=True)
+    temp_to_save.to_excel(anexo_path, index=False)
+else:
+    # se quiser mesmo assim gerar anexo vazio
+    pd.DataFrame(columns=["Data", "Turma", "Curso", "Professor", "Integrantes", "Horario", "Sede"]).to_excel(anexo_path, index=False)
+
+# ============ E-MAIL (SMTP GMAIL) ============
+def enviar_relatorio_turmas_100(df100: pd.DataFrame, to_list, cc_list=None):
+    sender_email = os.getenv("EMAIL_USER")
+    password = os.getenv("EMAIL_PASSWORD")
+    if not sender_email or not password:
+        raise RuntimeError("Defina EMAIL_USER e EMAIL_PASSWORD nas variáveis de ambiente.")
+
+    hoje_brt = pd.Timestamp.now(tz="America/Fortaleza")
+    if df100.empty:
+        assunto = f"[Relatório] Turmas 100% presença — nenhum registro ({hoje_brt:%d/%m/%Y})"
+        corpo_html = f"""
+        <p>Olá,</p>
+        <p>Não foram encontradas turmas com <strong>100% de presença</strong> no período considerado.</p>
+        <p>Data de geração: <strong>{hoje_brt:%d/%m/%Y %H:%M}</strong></p>
+        """
+    else:
+        ultimo_dia = df100["Data_dt"].max()
+        assunto = f"[Relatório] Turmas 100% presença — até {ultimo_dia:%d/%m/%Y}"
+        # tabela HTML
+        tbl = df100.copy()
+        tbl["Data"] = tbl["Data_dt"].dt.strftime("%d/%m/%Y")
+        tbl = tbl[["Data", "Sede", "Turma", "Curso", "Professor", "Integrantes", "Horario"]]
+        tabela_html = tbl.to_html(index=False, border=0, justify="left")
+        corpo_html = f"""
+        <p>Olá,</p>
+        <p>Segue abaixo o relatório de turmas com <strong>100% de presença</strong> (sem faltas):</p>
+        {tabela_html}
+        <p>Anexo: <em>turmas_100_presenca.xlsx</em></p>
+        <p>Gerado em: <strong>{hoje_brt:%d/%m/%Y %H:%M}</strong></p>
+        """
+
+    # monta mensagem
+    msg = MIMEMultipart()
+    msg["From"] = sender_email
+    msg["To"] = ", ".join(to_list)
+    if cc_list:
+        msg["Cc"] = ", ".join(cc_list)
+    msg["Subject"] = assunto
+    msg.attach(MIMEText(corpo_html, "html"))
+
+    # anexo
+    if os.path.exists(anexo_path):
+        with open(anexo_path, "rb") as f:
+            part = MIMEApplication(f.read(), Name=os.path.basename(anexo_path))
+            part["Content-Disposition"] = f'attachment; filename="{os.path.basename(anexo_path)}"'
+            msg.attach(part)
+
+    # envio
+    all_rcpts = list(to_list) + (cc_list or [])
+    with smtplib.SMTP("smtp.gmail.com", 587) as server:
+        server.starttls()
+        server.login(sender_email, password)
+        server.sendmail(sender_email, all_rcpts, msg.as_string())
+
+    print(f"📧 E-mail enviado para: {all_rcpts}")
+
+enviar_relatorio_turmas_100(df_100, DESTINATARIOS, CC)
 
 df.rename(columns={
     "Nome": "Turma",
@@ -159,7 +323,12 @@ def atualizar_linhas(sheet_destino, df_novos):
             sheet_destino.update_cells(cell_range)
             print(f"Atualizado: {chave}")
         else:
-            sheet_destino.append_row(valores, value_input_option='USER_ENTERED')
+            valores_norm = []
+            for i, col_name in enumerate(cabecalho):
+                v = valores[i] if i < len(valores) else ""
+                valores_norm.append(_norm_val(v, col_name, colunas_numericas))
+
+            sheet_destino.append_row(valores_norm, value_input_option='USER_ENTERED')
             print(f"Inserido: {chave}")
 
         time.sleep(1)
