@@ -49,11 +49,11 @@ if not os.path.exists(base_target_dir):
 # ============ PARÂMETROS ============
 # lista de destinatários e cc (ajuste como quiser)
 DESTINATARIOS = [
-    "cauan.victor@engajacomunicacao.com.br",
+    "academico.aldeota@digitalcollege.com.br",
+    "academico.sul@digitalcollege.com.br",
+    "academico.bezerra@digitalcollege.com.br",
 ]
-CC = [
-    "cauan.victor@engajacomunicacao.com.br",
-]
+CC = []
 
 # opcional: quantos dias olhar pra trás (por padrão, pega tudo)
 REPORT_DAYS = int(os.getenv("REPORT_DAYS", "0"))
