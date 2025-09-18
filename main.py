@@ -51,7 +51,7 @@ if not os.path.exists(base_target_dir):
 DESTINATARIOS = [
     "academico.aldeota@digitalcollege.com.br",
     "academico.sul@digitalcollege.com.br",
-    "academico.bezerra@digitalcollege.com.br",
+    "atendimento.bezerra@digitalcollege.com.br",
 ]
 CC = []
 
