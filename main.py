@@ -191,6 +191,9 @@ combined_data = []
 
 head_offices = ["Aldeota", "Sul", "Bezerra"]
 
+url_home = "https://www.sponteeducacional.net.br/home.aspx"
+url_didatico = "https://www.sponteeducacional.net.br/SPRel/Didatico/Turmas.aspx"
+
 while current_date <= end_date_range:
     for head_office in head_offices:
         success = False
@@ -226,7 +229,7 @@ while current_date <= end_date_range:
                 print(f"Processing date: {current_date.strftime('%d/%m/%Y')} - {day_of_week}")
 
                 driver = webdriver.Chrome(options=chrome_options)
-                driver.get("https://www.sponteeducacional.net.br/SPRel/Didatico/Turmas.aspx")
+                driver.get(url_home)
                 
                 email = driver.find_element(By.ID, "txtLogin")
                 email.send_keys(SPONTE_EMAIL)
@@ -237,30 +240,25 @@ while current_date <= end_date_range:
                 login_button.click()
                 time.sleep(5)
 
-                print(head_office)
-                enterprise = driver.find_element(By.ID, "ctl00_ctl00_spnNomeEmpresa").get_attribute("innerText").strip().replace(" ", "")
-                print(enterprise)
-                
-                combinacoes = {
-                    ("Aldeota", "DIGITALCOLLEGESUL-74070"): (1, "Acessando a sede Aldeota."),
-                    ("Aldeota", "DIGITALCOLLEGEBEZERRADEMENEZES-488365"): (1, "Acessando a sede Aldeota."),
-                    ("Sul", "DIGITALCOLLEGEALDEOTA-72546"): (3, "Acessando a sede Sul."),
-                    ("Sul", "DIGITALCOLLEGEBEZERRADEMENEZES-488365"): (3, "Acessando a sede Sul."),
-                    ("Bezerra", "DIGITALCOLLEGEALDEOTA-72546"): (4, "Acessando a sede Bezerra."),
-                    ("Bezerra", "DIGITALCOLLEGESUL-74070"): (4, "Acessando a sede Bezerra."),
-                    ("Aldeota", "DIGITALCOLLEGEALDEOTA-72546"): (None, "O script já está na Aldeota."),
-                    ("Sul", "DIGITALCOLLEGESUL-74070"): (None, "O script já está no Sul."),
-                    ("Bezerra", "DIGITALCOLLEGEBEZERRADEMENEZES-488365"): (None, "O script já está na Bezerra."),
+                nome_empresa_el = driver.find_element(By.ID, "lblNomeEmpresa")
+                cod_cliente_el = driver.find_element(By.ID, "lblCodCliSponte")
+
+                nome_empresa = nome_empresa_el.text.strip()
+                cod_cliente_texto = cod_cliente_el.text.strip()
+                cod_cliente = ''.join(filter(str.isdigit, cod_cliente_texto))
+
+                print(f"Sede atual (label): {nome_empresa} | Código de cliente: {cod_cliente}")
+
+                # HEAD_OFFICE -> código do cliente + id do link no dropdown (NA HOME)
+                branch_map = {
+                    "Aldeota": {"codigo": "72546", "link_id": "lnkEmpresa1"},
+                    "Sul": {"codigo": "74070", "link_id": "lnkEmpresa3"},
+                    "Bezerra": {"codigo": "488365", "link_id": "lnkEmpresa4"},
                 }
 
-                resultado = combinacoes.get((head_office, enterprise), (None, "Ação não realizada: combinação não reconhecida."))
-                val, message = resultado
+                alvo = branch_map.get(head_office)
 
-                print(message)
-
-                # if val is not None:
-                #     driver.execute_script(f"$('#ctl00_hdnEmpresa').val({val});javascript:__doPostBack('ctl00$lnkChange','');")
-                #     time.sleep(3)
+                driver.get(url_didatico)
 
                 if head_office == "Aldeota":
                     empresas_button = driver.find_element(By.ID, "ctl00_ctl00_ContentPlaceHolder1_liEmpresas")
