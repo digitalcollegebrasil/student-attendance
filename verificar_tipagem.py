@@ -4,7 +4,7 @@ from googleapiclient.discovery import build
 
 # === CONFIGURAÇÕES ===
 credentials_json = "credentials.json"
-GOOGLE_SHEET_ID = "1OAc-A6bJ0J1wRz-mnv-BVtOH9V93Vk_bs43Edhy8-fc"
+GOOGLE_SHEET_ID = "19_bvzaFfHkHWlRi4dV7hEJ44W2LoJIOSJkWeWW7CQ4A"
 
 # === AUTENTICAÇÃO ===
 scope_ro = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
