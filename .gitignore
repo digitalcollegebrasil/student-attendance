@@ -21,3 +21,6 @@ __pycache__
 *.pyo
 *.tmp
 *.json
+debug_sponte_frequencia/
+*.html
+*.png
