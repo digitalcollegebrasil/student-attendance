@@ -172,8 +172,21 @@ SHEET_HEADER_FREQ = [
     "Sede",
 ]
 
-# Sedes alvo
+# Sedes alvo (mantido para seleção/iteração no Sponte)
 HEAD_OFFICES = ["Aldeota", "Sul", "Bezerra"]
+
+# =======================
+# REGRAS DE SEDE (NOVO)
+# =======================
+# Baseado no FINAL do nome da turma:
+# - ...72546 -> Aldeota
+# - ...74070 -> Sul
+# - ...488365 -> Bezerra
+SEDE_SUFFIX_MAP: dict[str, str] = {
+    "72546": "Aldeota",
+    "74070": "Sul",
+    "488365": "Bezerra",
+}
 
 
 # =======================
@@ -517,7 +530,9 @@ def build_driver(download_dir: str, user_data_dir: str):
 
     # perfil temporário
     chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
-    service = Service()
+
+    # ✅ usa CHROMEDRIVER_PATH (conforme docstring)
+    service = Service(executable_path=CHROMEDRIVER_PATH)
     driver = webdriver.Chrome(service=service, options=chrome_options)
 
     driver.set_page_load_timeout(90)
@@ -567,7 +582,7 @@ def move_downloaded_file_unique(downloaded_path: str, target_dir: str, current_d
 
 
 # =======================
-# LÓGICA DE NEGÓCIO (data/curso)
+# LÓGICA DE NEGÓCIO (data/curso/sede)
 # =======================
 
 def processar_turma(nome_turma: str | None):
@@ -605,6 +620,36 @@ def detectar_curso(nome_turma: str) -> str:
     elif nome_turma.startswith("GT"):
         return "Geração Tech"
     return ""
+
+
+def detectar_sede_por_nome_turma(nome_turma: str, default: str = "") -> str:
+    """
+    Define Sede baseado no FINAL do nome da turma.
+    Regras:
+      - termina com 72546  -> Aldeota
+      - termina com 74070  -> Sul
+      - termina com 488365 -> Bezerra
+
+    Se não casar, retorna `default`.
+    """
+    if not isinstance(nome_turma, str):
+        return default
+
+    s = nome_turma.strip()
+
+    # Primeiro tenta capturar um bloco numérico no final
+    m = re.search(r"(\d+)\s*$", s)
+    if m:
+        code = m.group(1)
+        if code in SEDE_SUFFIX_MAP:
+            return SEDE_SUFFIX_MAP[code]
+
+    # Fallback: confere endswith literal (caso tenha caracteres que atrapalhem o regex acima)
+    for code, sede in SEDE_SUFFIX_MAP.items():
+        if re.search(rf"{re.escape(code)}\s*$", s):
+            return sede
+
+    return default
 
 
 def weekday_pt_for_filter(d: date) -> str:
@@ -879,7 +924,12 @@ def extrair_df_relatorio(xls_file_path: str, current_date: date, head_office: st
     # Enriquecimentos
     data["Data"] = current_date.strftime("%d/%m/%Y")
     data["Curso"] = data["Nome"].apply(detectar_curso) if "Nome" in data.columns else ""
-    data["Sede"] = head_office
+
+    # ✅ Sede baseada no FINAL do nome da turma (com fallback para head_office)
+    if "Nome" in data.columns:
+        data["Sede"] = data["Nome"].apply(lambda n: detectar_sede_por_nome_turma(n, default=head_office))
+    else:
+        data["Sede"] = head_office
 
     # Numéricos
     for c in ["Frequentes", "Não Frequentes", "Integrantes", "Trancados", "Vagas"]:
@@ -1494,6 +1544,11 @@ def google_sheets_sync_frequencia(input_file: str):
 
     # ignora GT
     df = df[~df["Turma"].astype(str).str.startswith("GT")].copy()
+
+    # ✅ Reforça a Sede com base no NOME DA TURMA (garante correção mesmo se vier errado do XLS)
+    if "Sede" not in df.columns:
+        df["Sede"] = ""
+    df["Sede"] = df["Turma"].astype(str).apply(lambda n: detectar_sede_por_nome_turma(n, default=""))
 
     # ✅ Ajusta nomes EXACTOS para o cabeçalho do Google Sheets solicitado
     df.rename(columns={
