@@ -7,3 +7,4 @@ gspread
 oauth2client
 numpy
 google-api-python-client
+holidays
