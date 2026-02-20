@@ -21,6 +21,9 @@ Fluxo:
 2) Consolida em Excel local (frequencia_combined_data.xlsx)
 3) Gera relatório "100% presença" e envia e-mail (opcional)
 4) Sincroniza com Google Sheets (duas abas: Presencial e Online) + correção de tipagem + formatação
+5) Pente-fino final: corrige coluna "Sede" no Google Sheets pela Turma (garantia)
+6) Pular feriados no Sponte (não coleta em feriado)
+7) Pente-fino final de feriados no Google Sheets (deleta linhas cuja Data cai em feriado)
 
 Requisitos:
 - google-chrome instalado
@@ -40,9 +43,27 @@ Requisitos:
     END_DAYS_AGO=2   (fim = hoje - END_DAYS_AGO)
     MAX_ATTEMPTS=3
 
-DEBUG (NOVO):
+DEBUG:
     STEP_SCREENSHOTS=1 (default: 1)  -> tira prints em cada passo
     STEP_SAVE_HTML=0    (default: 0) -> salva HTML em cada passo (pode pesar)
+
+HEADLESS:
+    HEADLESS=1 (default: 1) -> roda headless
+    HEADLESS=0 -> roda com UI (útil pra debugar local)
+
+PENTE-FINO SEDES (Sheets):
+    FIX_SEDES_GOOGLE=1 (default: 1) -> roda pente-fino após sync
+    FIX_SEDES_GOOGLE_SORT=0 (default: 0) -> se 1, ordena por Data -> Turma após correção
+
+FERIADOS:
+    SKIP_HOLIDAYS=1 (default: 1) -> pula feriados durante coleta no Sponte
+    NO_FORTALEZA_MUNICIPAL=0 (default: 0) -> se 1, não inclui feriados municipais de Fortaleza
+
+PENTE-FINO FERIADOS NO SHEETS:
+    PENTE_FINO_FERIADOS_GOOGLE=1 (default: 1) -> remove linhas em feriados no fim
+    PENTE_FINO_FERIADOS_DRYRUN=0 (default: 0) -> só simula
+    PENTE_FINO_FERIADOS_ALL_SHEETS=0 (default: 0) -> se 1, processa todas as abas
+    PENTE_FINO_FERIADOS_DATE_COL=Data (default: Data) -> nome da coluna de data no Sheets
 """
 
 from __future__ import annotations
@@ -55,6 +76,7 @@ import json
 import shutil
 import tempfile
 from datetime import datetime, timedelta, date
+from typing import Any, Dict, Iterator, List, Optional, Tuple
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -81,6 +103,9 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 from email.utils import formataddr
+
+# ✅ FERIADOS
+import holidays
 
 
 # =======================
@@ -137,10 +162,6 @@ END_DAYS_AGO = int((os.getenv("END_DAYS_AGO", "2") or "2"))
 MAX_ATTEMPTS = int((os.getenv("MAX_ATTEMPTS", "3") or "3"))
 
 # --- CONTROLE DE ENVIO DE E-MAIL --------------------------------------------
-# SEND_EMAIL pode ser:
-#   - "1"/"true"/"yes"  -> força enviar
-#   - "0"/"false"/"no"  -> desativa enviar
-#   - "auto" (padrão)   -> envia só se EMAIL_USER e EMAIL_PASSWORD existirem
 _raw = (os.getenv("SEND_EMAIL", "auto") or "auto").strip().lower()
 if _raw in ("1", "true", "yes", "y", "on"):
     SEND_EMAIL = True
@@ -154,7 +175,10 @@ SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
 EMAIL_FROM = (os.getenv("EMAIL_FROM", "") or EMAIL_USER or "").strip()
 
 # Google Sheets (frequência)
-GOOGLE_SHEET_ID_FREQ = "19_bvzaFfHkHWlRi4dV7hEJ44W2LoJIOSJkWeWW7CQ4A"
+GOOGLE_SHEET_ID_FREQ = os.getenv(
+    "GOOGLE_SHEET_ID_FREQ",
+    "19_bvzaFfHkHWlRi4dV7hEJ44W2LoJIOSJkWeWW7CQ4A"
+)
 
 # Cabeçalho desejado no Google Sheets (se não existir, cria/força)
 SHEET_HEADER_FREQ = [
@@ -172,25 +196,28 @@ SHEET_HEADER_FREQ = [
     "Sede",
 ]
 
-# Sedes alvo (mantido para seleção/iteração no Sponte)
+# Sedes alvo
 HEAD_OFFICES = ["Aldeota", "Sul", "Bezerra"]
 
 # =======================
-# REGRAS DE SEDE (NOVO)
+# REGRAS DE SEDE
 # =======================
-# Baseado no FINAL do nome da turma:
-# - ...72546 -> Aldeota
-# - ...74070 -> Sul
-# - ...488365 -> Bezerra
+# Baseado nos códigos de unidade.
 SEDE_SUFFIX_MAP: dict[str, str] = {
     "72546": "Aldeota",
     "74070": "Sul",
     "488365": "Bezerra",
 }
 
+# "Coisas úteis do antigo": metadados pra debug/validação.
+BRANCH_META: dict[str, dict[str, str]] = {
+    "Aldeota": {"codigo": "72546"},
+    "Sul": {"codigo": "74070"},
+    "Bezerra": {"codigo": "488365"},
+}
 
 # =======================
-# DEBUG / STEPS (NOVO)
+# DEBUG / STEPS
 # =======================
 
 def _bool_env(name: str, default: bool = False) -> bool:
@@ -199,8 +226,24 @@ def _bool_env(name: str, default: bool = False) -> bool:
         return default
     return str(v).strip().lower() in ("1", "true", "yes", "y", "on")
 
-STEP_SCREENSHOTS = _bool_env("STEP_SCREENSHOTS", False)  # default OFF
-STEP_SAVE_HTML = _bool_env("STEP_SAVE_HTML", False)     # default OFF (pesa)
+
+STEP_SCREENSHOTS = _bool_env("STEP_SCREENSHOTS", False)   # default OFF
+STEP_SAVE_HTML = _bool_env("STEP_SAVE_HTML", False)      # default OFF
+HEADLESS = _bool_env("HEADLESS", True)                   # default ON
+
+FIX_SEDES_GOOGLE = _bool_env("FIX_SEDES_GOOGLE", True)   # default ON
+FIX_SEDES_GOOGLE_SORT = _bool_env("FIX_SEDES_GOOGLE_SORT", False)
+
+# ✅ FERIADOS
+SKIP_HOLIDAYS = _bool_env("SKIP_HOLIDAYS", True)
+NO_FORTALEZA_MUNICIPAL = _bool_env("NO_FORTALEZA_MUNICIPAL", False)
+INCLUDE_FORTALEZA_MUNICIPAL = not NO_FORTALEZA_MUNICIPAL
+
+# ✅ PENTE-FINO FERIADOS NO SHEETS
+PENTE_FINO_FERIADOS_GOOGLE = _bool_env("PENTE_FINO_FERIADOS_GOOGLE", True)
+PENTE_FINO_FERIADOS_DRYRUN = _bool_env("PENTE_FINO_FERIADOS_DRYRUN", False)
+PENTE_FINO_FERIADOS_ALL_SHEETS = _bool_env("PENTE_FINO_FERIADOS_ALL_SHEETS", False)
+PENTE_FINO_FERIADOS_DATE_COL = (os.getenv("PENTE_FINO_FERIADOS_DATE_COL", "Data") or "Data").strip()
 
 RUN_ID = datetime.now().strftime("%Y%m%d_%H%M%S")
 DEBUG_RUN_DIR = os.path.join(DEBUG_DIR, RUN_ID)
@@ -249,7 +292,7 @@ def _parse_cli_args():
     Exemplos:
       python3 main.py --inicio 10/01/2026 --fim 15/01/2026 --no-email
       python3 main.py --inicio 2026-01-10 --fim 2026-01-15 --no-email
-      python3 main.py --no-email  (usa janela padrão START_DAYS_AGO/END_DAYS_AGO)
+      python3 main.py --no-email
     """
     p = argparse.ArgumentParser(add_help=True)
     p.add_argument("--inicio", "--start", dest="inicio", default=None,
@@ -260,17 +303,76 @@ def _parse_cli_args():
                    help="Não envia e-mail (força SEND_EMAIL=False)")
     return p.parse_args()
 
-
 def _parse_date_any(s: str) -> date:
     s = (s or "").strip()
     if not s:
         raise ValueError("data vazia")
-    # aceita dd/mm/aaaa ou aaaa-mm-dd
     if re.fullmatch(r"\d{2}/\d{2}/\d{4}", s):
         return datetime.strptime(s, "%d/%m/%Y").date()
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s):
         return datetime.strptime(s, "%Y-%m-%d").date()
     raise ValueError(f"Formato inválido: {s} (use dd/mm/aaaa ou aaaa-mm-dd)")
+
+
+# =======================
+# HELPERS (FERIADOS)  ✅ NOVO
+# =======================
+
+def easter_date_gregorian(year: int) -> date:
+    """
+    Computa Domingo de Páscoa (calendário gregoriano) - algoritmo de Meeus/Jones/Butcher.
+    """
+    a = year % 19
+    b = year // 100
+    c = year % 100
+    d = b // 4
+    e = b % 4
+    f = (b + 8) // 25
+    g = (b - f + 1) // 3
+    h = (19 * a + b - d - g + 15) % 30
+    i = c // 4
+    k = c % 4
+    l = (32 + 2 * e + 2 * i - h - k) % 7
+    m = (a + 11 * h + 22 * l) // 451
+    month = (h + l - 7 * m + 114) // 31
+    day = ((h + l - 7 * m + 114) % 31) + 1
+    return date(year, month, day)
+
+def add_carnaval_and_ash_wednesday(hol: holidays.HolidayBase, years: List[int]) -> None:
+    """
+    Adiciona: Sábado, Domingo, Segunda, Terça de Carnaval + Quarta-feira de Cinzas.
+    Base: Páscoa.
+    """
+    for y in years:
+        easter = easter_date_gregorian(y)
+        mapping = {
+            50: "Carnaval (Sábado)",
+            49: "Carnaval (Domingo)",
+            48: "Carnaval (Segunda)",
+            47: "Carnaval (Terça)",
+            46: "Quarta-feira de Cinzas",
+        }
+        for delta_days, name in mapping.items():
+            hol[easter - timedelta(days=delta_days)] = name
+
+def make_holiday_checker(years: List[int], include_fortaleza_municipal: bool = True):
+    """
+    Cria feriados BR + CE e (opcional) Fortaleza, e adiciona Carnaval/Cinzas.
+    """
+    years = sorted(set([y for y in years if y is not None]))
+    if not years:
+        years = [datetime.now().year]
+
+    br_ce = holidays.Brazil(subdiv="CE", years=years)
+
+    if include_fortaleza_municipal:
+        for y in years:
+            br_ce[date(y, 4, 13)] = "Aniversário de Fortaleza"
+            br_ce[date(y, 8, 15)] = "Nossa Senhora da Assunção (Fortaleza)"
+            br_ce[date(y, 12, 8)] = "Nossa Senhora da Conceição (Fortaleza)"
+
+    add_carnaval_and_ash_wednesday(br_ce, years)
+    return br_ce
 
 
 # =======================
@@ -280,17 +382,15 @@ def _parse_date_any(s: str) -> date:
 def email_configurada() -> bool:
     return bool((EMAIL_FROM or EMAIL_USER) and EMAIL_PASSWORD)
 
-
 def _resolve_sender() -> str:
     sender = (EMAIL_FROM or EMAIL_USER or "").strip()
     if not sender:
         raise RuntimeError(
-            "Remetente ausente. Defina EMAIL_FROM ou EMAIL_USER no .env (ex.: EMAIL_USER='seuemail@dominio')."
+            "Remetente ausente. Defina EMAIL_FROM ou EMAIL_USER no .env."
         )
     if "@" not in sender:
         raise RuntimeError(f"Remetente inválido: '{sender}'. Informe um e-mail válido.")
     return sender
-
 
 def enviar_email(subject: str, html_body: str, attachments: list[str] | None = None):
     attachments = attachments or []
@@ -298,7 +398,7 @@ def enviar_email(subject: str, html_body: str, attachments: list[str] | None = N
     FROM_ADDR = _resolve_sender()
     LOGIN_USER = (EMAIL_USER or FROM_ADDR)
     if not EMAIL_PASSWORD:
-        raise RuntimeError("EMAIL_PASSWORD não definido. Crie/app password e defina no .env.")
+        raise RuntimeError("EMAIL_PASSWORD não definido.")
 
     msg = MIMEMultipart()
     msg["From"] = formataddr(("Class Panel Bot", FROM_ADDR))
@@ -327,7 +427,6 @@ def enviar_email(subject: str, html_body: str, attachments: list[str] | None = N
 
     print(f"📧 Email enviado de {FROM_ADDR} para: {', '.join(all_rcpts)}")
 
-
 def montar_corpo_html_100(df100: pd.DataFrame, hoje_brt: pd.Timestamp, anexo_path: str) -> str:
     if df100.empty:
         return f"""
@@ -350,10 +449,9 @@ def montar_corpo_html_100(df100: pd.DataFrame, hoje_brt: pd.Timestamp, anexo_pat
     <p>Gerado em: <strong>{hoje_brt:%d/%m/%Y %H:%M}</strong></p>
     """
 
-
 def enviar_relatorio_turmas_100(df100: pd.DataFrame, anexo_path: str):
     if not SEND_EMAIL or not email_configurada():
-        print("E-mail desativado ou credenciais ausentes (EMAIL_USER/EMAIL_PASSWORD). Relatório 100% presença foi pulado.")
+        print("E-mail desativado ou credenciais ausentes. Relatório 100% presença foi pulado.")
         return
 
     hoje_brt = pd.Timestamp.now(tz=TZ_NAME)
@@ -373,7 +471,6 @@ def enviar_relatorio_turmas_100(df100: pd.DataFrame, anexo_path: str):
 
 def wait_ready(driver, timeout=25):
     WebDriverWait(driver, timeout).until(lambda d: d.execute_script("return document.readyState") == "complete")
-
 
 def wait_overlay_gone(driver, timeout=10):
     overlay_selectors = [
@@ -406,11 +503,9 @@ def wait_overlay_gone(driver, timeout=10):
             pass
         time.sleep(0.3)
 
-
 def safe_find(driver, by, locator, timeout=20):
     wait = WebDriverWait(driver, timeout)
     return wait.until(EC.presence_of_element_located((by, locator)))
-
 
 def safe_click(driver, by, locator, timeout=20, attempts=3):
     wait = WebDriverWait(driver, timeout)
@@ -421,7 +516,7 @@ def safe_click(driver, by, locator, timeout=20, attempts=3):
             wait_overlay_gone(driver, timeout=8)
             el = wait.until(EC.element_to_be_clickable((by, locator)))
             driver.execute_script("arguments[0].scrollIntoView({block:'center', inline:'center'});", el)
-            time.sleep(0.2)
+            time.sleep(0.15)
             try:
                 el.click()
             except (ElementClickInterceptedException, WebDriverException):
@@ -429,10 +524,9 @@ def safe_click(driver, by, locator, timeout=20, attempts=3):
             return
         except (StaleElementReferenceException, ElementClickInterceptedException, TimeoutException, WebDriverException) as e:
             last_exc = e
-            time.sleep(1)
+            time.sleep(0.8)
 
     raise TimeoutException(f"safe_click falhou em {locator}: {last_exc}")
-
 
 def safe_select_by_visible_text(driver, by, locator, text, timeout=20):
     last_exc = None
@@ -446,7 +540,6 @@ def safe_select_by_visible_text(driver, by, locator, text, timeout=20):
             last_exc = e
             time.sleep(0.8)
     raise TimeoutException(f"safe_select_by_visible_text falhou em {locator}: {last_exc}")
-
 
 def safe_send_keys(driver, by, locator, text, timeout=20, clear_first=True):
     wait = WebDriverWait(driver, timeout)
@@ -468,7 +561,6 @@ def safe_send_keys(driver, by, locator, text, timeout=20, clear_first=True):
             time.sleep(0.8)
     raise TimeoutException(f"safe_send_keys falhou em {locator}: {last_exc}")
 
-
 def js_set_value_and_events(driver, element, value: str):
     driver.execute_script(
         """
@@ -483,9 +575,92 @@ def js_set_value_and_events(driver, element, value: str):
         value,
     )
 
+def wait_for_postback(driver, timeout: int = 25):
+    """
+    Espera terminar postback/AJAX do Sponte (ASP.NET).
+    - Se tiver MS AJAX: Sys.WebForms.PageRequestManager.getInstance().get_isInAsyncPostBack()
+    - Senão: jQuery.active
+    - + readyState + overlays
+    """
+    end = time.time() + timeout
+    while time.time() < end:
+        try:
+            wait_overlay_gone(driver, timeout=3)
+        except Exception:
+            pass
+
+        # 1) ASP.NET AJAX (melhor sinal)
+        try:
+            in_async = driver.execute_script("""
+                try {
+                  if (window.Sys && Sys.WebForms && Sys.WebForms.PageRequestManager) {
+                    return Sys.WebForms.PageRequestManager.getInstance().get_isInAsyncPostBack();
+                  }
+                } catch(e) {}
+                return null;
+            """)
+            if in_async is True:
+                time.sleep(0.2)
+                continue
+        except Exception:
+            pass
+
+        # 2) jQuery
+        try:
+            active = driver.execute_script("return (window.jQuery && jQuery.active) ? jQuery.active : 0;")
+            if isinstance(active, (int, float)) and active != 0:
+                time.sleep(0.2)
+                continue
+        except Exception:
+            pass
+
+        # 3) readyState (fallback)
+        try:
+            rs = driver.execute_script("return document.readyState")
+            if rs == "complete":
+                return
+        except Exception:
+            pass
+
+        time.sleep(0.2)
+
+def ensure_checkbox_state(driver, by, locator, desired: bool = True, timeout: int = 25):
+    """
+    Garante estado do checkbox e espera o efeito do clique (postback/AJAX).
+    Rebusca o elemento para evitar stale.
+    """
+    last_exc = None
+    end = time.time() + timeout
+
+    while time.time() < end:
+        try:
+            el = safe_find(driver, by, locator, timeout=10)
+
+            try:
+                current = bool(el.is_selected())
+            except Exception:
+                current = str(el.get_attribute("checked") or "").lower() in ("true", "checked", "1")
+
+            if current == desired:
+                return
+
+            safe_click(driver, by, locator, timeout=15)
+            wait_for_postback(driver, timeout=timeout)
+            time.sleep(0.2)
+            continue
+
+        except StaleElementReferenceException as e:
+            last_exc = e
+            time.sleep(0.3)
+            continue
+        except Exception as e:
+            last_exc = e
+            time.sleep(0.3)
+            continue
+
+    raise TimeoutException(f"ensure_checkbox_state timeout em {locator}: {last_exc}")
 
 def take_debug_snapshot(driver, label: str):
-    # Mantido para compatibilidade; agora usa a pasta da execução (DEBUG_RUN_DIR)
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     png_path = os.path.join(DEBUG_RUN_DIR, f"{ts}_{_sanitize_label(label)}.png")
     html_path = os.path.join(DEBUG_RUN_DIR, f"{ts}_{_sanitize_label(label)}.html")
@@ -503,7 +678,6 @@ def take_debug_snapshot(driver, label: str):
     except Exception as e:
         print(f"⚠️ Falha ao salvar HTML: {e}")
 
-
 def build_driver(download_dir: str, user_data_dir: str):
     chrome_options = webdriver.ChromeOptions()
 
@@ -516,8 +690,9 @@ def build_driver(download_dir: str, user_data_dir: str):
     }
     chrome_options.add_experimental_option("prefs", prefs)
 
-    # HEADLESS "server safe"
-    chrome_options.add_argument("--headless=new")
+    if HEADLESS:
+        chrome_options.add_argument("--headless=new")
+
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
@@ -527,18 +702,18 @@ def build_driver(download_dir: str, user_data_dir: str):
     chrome_options.add_argument("--disable-notifications")
     chrome_options.add_argument("--disable-popup-blocking")
     chrome_options.add_argument("--lang=pt-BR")
+    if not HEADLESS:
+        chrome_options.add_argument("--start-maximized")
 
-    # perfil temporário
     chrome_options.add_argument(f"--user-data-dir={user_data_dir}")
 
-    # ✅ usa CHROMEDRIVER_PATH (conforme docstring)
-    service = Service(executable_path=CHROMEDRIVER_PATH)
-    driver = webdriver.Chrome(service=service, options=chrome_options)
+    # service = Service(executable_path=CHROMEDRIVER_PATH)
+    # driver = webdriver.Chrome(service=service, options=chrome_options)
+    driver = webdriver.Chrome(options=chrome_options)
 
     driver.set_page_load_timeout(90)
     driver.set_script_timeout(60)
 
-    # garante downloads em headless (CDP)
     try:
         driver.execute_cdp_cmd("Page.setDownloadBehavior", {"behavior": "allow", "downloadPath": download_dir})
     except Exception as e:
@@ -546,12 +721,7 @@ def build_driver(download_dir: str, user_data_dir: str):
 
     return driver
 
-
 def wait_for_new_download_xls(download_dir: str, before_files: set[str], timeout=120) -> str:
-    """
-    Espera aparecer um NOVO .xls (não presente em before_files) e garante que não exista .crdownload pendente.
-    Retorna o caminho do arquivo novo mais recente.
-    """
     end = time.time() + timeout
     last_seen = None
 
@@ -571,7 +741,6 @@ def wait_for_new_download_xls(download_dir: str, before_files: set[str], timeout
         time.sleep(1)
 
     raise TimeoutException(f"Timeout esperando novo download .xls em {download_dir}. Último visto: {last_seen}")
-
 
 def move_downloaded_file_unique(downloaded_path: str, target_dir: str, current_date: date, head_office: str) -> str:
     filename = f"Relatorio_{current_date.strftime('%d_%m_%Y')}_{head_office}.xls"
@@ -594,7 +763,6 @@ def processar_turma(nome_turma: str | None):
         print(f"Turma ignorada: {nome_turma}")
         return None
     return nome_turma
-
 
 def detectar_curso(nome_turma: str) -> str:
     if not isinstance(nome_turma, str):
@@ -621,39 +789,29 @@ def detectar_curso(nome_turma: str) -> str:
         return "Geração Tech"
     return ""
 
-
 def detectar_sede_por_nome_turma(nome_turma: str, default: str = "") -> str:
     """
-    Define Sede baseado no FINAL do nome da turma.
-    Regras:
-      - termina com 72546  -> Aldeota
-      - termina com 74070  -> Sul
-      - termina com 488365 -> Bezerra
-
-    Se não casar, retorna `default`.
+    Define Sede procurando os códigos (72546/74070/488365) como "token numérico"
+    em QUALQUER POSIÇÃO do nome (com boundary), não só no final.
     """
     if not isinstance(nome_turma, str):
         return default
 
     s = nome_turma.strip()
 
-    # Primeiro tenta capturar um bloco numérico no final
+    for code, sede in SEDE_SUFFIX_MAP.items():
+        if re.search(rf"(?<!\d){re.escape(code)}(?!\d)", s):
+            return sede
+
     m = re.search(r"(\d+)\s*$", s)
     if m:
         code = m.group(1)
         if code in SEDE_SUFFIX_MAP:
             return SEDE_SUFFIX_MAP[code]
 
-    # Fallback: confere endswith literal (caso tenha caracteres que atrapalhem o regex acima)
-    for code, sede in SEDE_SUFFIX_MAP.items():
-        if re.search(rf"{re.escape(code)}\s*$", s):
-            return sede
-
     return default
 
-
 def weekday_pt_for_filter(d: date) -> str:
-    # 0=Mon ... 6=Sun
     mapa = {
         0: "Segunda-Feira",
         1: "Terça-Feira",
@@ -670,7 +828,7 @@ def weekday_pt_for_filter(d: date) -> str:
 # SCRIPT (Sponte -> XLS)
 # =======================
 
-def login_sponte(driver):
+def login_sponte(driver) -> Tuple[str, str]:
     step("Abrindo página de login (Sponte Home)", driver, "login_abrindo_home")
     driver.get(url_home)
     wait_ready(driver, timeout=30)
@@ -688,71 +846,97 @@ def login_sponte(driver):
     step("Aguardando pós-login", driver, "login_pos_login_aguardando")
     time.sleep(2)
     wait_ready(driver, timeout=30)
-    step("Login concluído (página pronta)", driver, "login_concluido")
 
+    nome_empresa = ""
+    cod_cliente = ""
+    try:
+        nome_empresa_el = safe_find(driver, By.ID, "lblNomeEmpresa", timeout=10)
+        cod_cliente_el = safe_find(driver, By.ID, "lblCodCliSponte", timeout=10)
+        nome_empresa = (nome_empresa_el.text or "").strip()
+        cod_cliente_texto = (cod_cliente_el.text or "").strip()
+        cod_cliente = "".join(filter(str.isdigit, cod_cliente_texto))
+        print(f"🏢 Sede atual (label): {nome_empresa} | Código cliente: {cod_cliente}")
+    except Exception:
+        pass
+
+    step("Login concluído (página pronta)", driver, "login_concluido")
+    return nome_empresa, cod_cliente
+
+def _get_checkbox_label_text(driver, checkbox_id: str) -> str:
+    try:
+        lab = driver.find_element(By.CSS_SELECTOR, f"label[for='{checkbox_id}']")
+        return (lab.text or "").strip()
+    except Exception:
+        return ""
 
 def selecionar_empresas_por_sede(driver, head_office: str):
-    """
-    Seleciona empresas (sede) na aba Empresas.
-    Estratégia:
-      - abre aba Empresas
-      - usa chkMarcarTodas para marcar tudo e depois desmarcar tudo (limpar)
-      - marca somente a sede alvo (cblEmpresas_{idx})
-      - volta para a primeira aba/pill (li:first-child)
-    """
-    idx_map = {"Aldeota": 0, "Sul": 1, "Bezerra": 2}
-    if head_office not in idx_map:
+    if head_office not in HEAD_OFFICES:
         raise ValueError(f"Sede inválida: {head_office}")
 
     step(f"Abrindo aba Empresas para selecionar sede: {head_office}", driver, f"empresas_abrindo_{head_office}")
     safe_click(driver, By.ID, "ctl00_ctl00_ContentPlaceHolder1_liEmpresas", timeout=25)
-    time.sleep(1)
+    wait_for_postback(driver, timeout=25)
+    time.sleep(0.5)
     step("Aba Empresas aberta", driver, f"empresas_aberta_{head_office}")
 
-    # Tenta "limpar seleção": marcar todas e desmarcar todas (toggle comum)
-    step("Tentando limpar seleção (marcar/desmarcar todas)", driver, f"empresas_limpando_{head_office}")
-    try:
-        safe_click(driver, By.ID, "ctl00_ctl00_ContentPlaceHolder1_chkMarcarTodas", timeout=25)
-        time.sleep(0.8)
-        safe_click(driver, By.ID, "ctl00_ctl00_ContentPlaceHolder1_chkMarcarTodas", timeout=25)
-        time.sleep(0.8)
-    except Exception:
-        step("Checkbox 'Marcar todas' não encontrado (seguindo mesmo assim)", driver, f"empresas_sem_marcar_todas_{head_office}")
+    # pega IDs (strings) — não segura WebElement
+    cbs = driver.find_elements(By.CSS_SELECTOR, "input[id^='ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_']")
+    cb_ids = [cb.get_attribute("id") for cb in cbs if cb.get_attribute("id")]
+    if not cb_ids:
+        raise RuntimeError("Não encontrei checkboxes de empresas (cblEmpresas_*).")
 
-    # Marca somente a sede alvo
-    idx = idx_map[head_office]
-    chk_id = f"ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_{idx}"
+    # descobre o alvo
+    alvo_id: Optional[str] = None
+    codigo = BRANCH_META.get(head_office, {}).get("codigo", "")
+    for cid in cb_ids:
+        label_txt = _get_checkbox_label_text(driver, cid).lower()
+        if codigo and re.search(rf"(?<!\d){re.escape(codigo)}(?!\d)", label_txt):
+            alvo_id = cid
+            break
+        if head_office.lower() in label_txt:
+            alvo_id = cid
+            break
 
-    step(f"Marcando somente a sede alvo: {head_office} (id={chk_id})", driver, f"empresas_marcando_{head_office}")
-    el = safe_find(driver, By.ID, chk_id, timeout=25)
-    try:
-        is_checked = el.is_selected()
-    except Exception:
-        is_checked = False
+    if not alvo_id:
+        idx_map = {"Aldeota": 0, "Sul": 1, "Bezerra": 2}
+        alvo_id = f"ctl00_ctl00_ContentPlaceHolder1_cblEmpresas_{idx_map[head_office]}"
 
-    if not is_checked:
-        safe_click(driver, By.ID, chk_id, timeout=25)
-        time.sleep(0.8)
+    step(f"Checkbox alvo: {alvo_id} (sede={head_office})", driver, f"empresas_alvo_{head_office}")
 
-    step(f"Sede marcada: {head_office}", driver, f"empresas_sede_ok_{head_office}")
+    # 1) DESMARCA todos que não são alvo
+    for cid in cb_ids:
+        if cid == alvo_id:
+            continue
+        step(f"Desmarcando: {cid}", driver, f"empresas_uncheck_{head_office}")
+        ensure_checkbox_state(driver, By.ID, cid, desired=False, timeout=30)
 
-    # volta para a primeira pill/aba
+    # 2) MARCA o alvo por último
+    step(f"Marcando alvo: {alvo_id}", driver, f"empresas_check_{head_office}")
+    ensure_checkbox_state(driver, By.ID, alvo_id, desired=True, timeout=30)
+
+    # validação re-buscando
+    time.sleep(0.5)
+    selected = []
+    for cid in cb_ids:
+        try:
+            el = driver.find_element(By.ID, cid)
+            if el.is_selected():
+                selected.append(cid)
+        except Exception:
+            pass
+
+    if len(selected) != 1:
+        print(f"⚠️ Validação: checkboxes selecionados={len(selected)} -> {selected}")
+    else:
+        print(f"✅ Seleção de empresa OK: {selected[0]}")
+
     step("Voltando para aba principal (primeira pill)", driver, f"empresas_voltando_principal_{head_office}")
     safe_click(driver, By.CSS_SELECTOR, "ul.nav.nav-pills li:first-child", timeout=25)
-    time.sleep(1)
+    wait_for_postback(driver, timeout=25)
+    time.sleep(0.5)
     step("Aba principal selecionada", driver, f"empresas_principal_ok_{head_office}")
 
-
 def configurar_filtros_frequencia(driver, current_date: date):
-    """
-    Configura:
-      - Situação = Vigente
-      - Dia da semana = current_date
-      - Relatório Quantitativo = ON
-      - Marcar turmas = ON
-      - Data início = Data término = current_date
-      - Exportar = ON (Excel Sem Formatação)
-    """
     step("Selecionando Situação = Vigente", driver, f"filtros_situacao_vigente_{current_date:%d_%m_%Y}")
     safe_select_by_visible_text(
         driver,
@@ -761,14 +945,12 @@ def configurar_filtros_frequencia(driver, current_date: date):
         "Vigente",
         timeout=25,
     )
-    time.sleep(0.8)
-    step("Situação selecionada: Vigente", driver, f"filtros_situacao_ok_{current_date:%d_%m_%Y}")
-
-    # Dia da semana
-    dia_pt = weekday_pt_for_filter(current_date)
-    step(f"Abrindo seletor de dia da semana e escolhendo: {dia_pt}", driver, f"filtros_dia_abre_{dia_pt}_{current_date:%d_%m_%Y}")
-    safe_click(driver, By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_divDiaSemana", timeout=25)
     time.sleep(0.6)
+
+    dia_pt = weekday_pt_for_filter(current_date)
+    step(f"Escolhendo dia da semana: {dia_pt}", driver, f"filtros_dia_{dia_pt}_{current_date:%d_%m_%Y}")
+    safe_click(driver, By.ID, "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_divDiaSemana", timeout=25)
+    time.sleep(0.5)
 
     dia_xpath_variants = [f"//*[normalize-space(text())='{dia_pt}']"]
     if dia_pt == "Terça-Feira":
@@ -788,35 +970,30 @@ def configurar_filtros_frequencia(driver, current_date: date):
             pass
     if not clicked:
         raise TimeoutException(f"Não consegui selecionar dia da semana no filtro: {dia_pt}")
+    time.sleep(0.6)
 
-    time.sleep(0.8)
-    step(f"Dia da semana selecionado: {dia_pt}", driver, f"filtros_dia_ok_{dia_pt}_{current_date:%d_%m_%Y}")
-
-    # Relatório Quantitativo
-    step("Marcando Relatório Quantitativo", driver, f"filtros_relatorio_quant_{current_date:%d_%m_%Y}")
-    safe_click(
+    step("Garantindo 'Relatório Quantitativo' marcado", driver, f"filtros_relatorio_quant_{current_date:%d_%m_%Y}")
+    ensure_checkbox_state(
         driver,
         By.ID,
         "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_chkRelatorioQuantitativo",
+        desired=True,
         timeout=25,
     )
-    time.sleep(0.6)
-    step("Relatório Quantitativo marcado", driver, f"filtros_relatorio_quant_ok_{current_date:%d_%m_%Y}")
+    time.sleep(0.5)
 
-    # Marcar todas as turmas
-    step("Marcando 'Marcar turmas' (todas)", driver, f"filtros_marcar_turmas_{current_date:%d_%m_%Y}")
-    safe_click(
+    step("Garantindo 'Marcar turmas' marcado", driver, f"filtros_marcar_turmas_{current_date:%d_%m_%Y}")
+    ensure_checkbox_state(
         driver,
         By.ID,
         "ctl00_ctl00_ContentPlaceHolder1_ContentPlaceHolder2_tab_tabTurmasRegulares_chkMarcarTurmas",
+        desired=True,
         timeout=25,
     )
-    time.sleep(1)
-    step("Turmas marcadas", driver, f"filtros_marcar_turmas_ok_{current_date:%d_%m_%Y}")
+    time.sleep(0.8)
 
     date_str = current_date.strftime("%d/%m/%Y")
 
-    # Inputs de data (JS para evitar mascaras/readonly)
     step(f"Setando data início (JS): {date_str}", driver, f"filtros_data_inicio_{current_date:%d_%m_%Y}")
     start_el = safe_find(
         driver,
@@ -834,30 +1011,20 @@ def configurar_filtros_frequencia(driver, current_date: date):
         timeout=25,
     )
     js_set_value_and_events(driver, end_el, date_str)
-
-    time.sleep(0.8)
-    step("Datas configuradas", driver, f"filtros_datas_ok_{current_date:%d_%m_%Y}")
-
-    # Exportar checkbox
-    step("Marcando 'Exportar'", driver, f"filtros_exportar_chk_{current_date:%d_%m_%Y}")
-    safe_click(driver, By.ID, "ctl00_ctl00_ContentPlaceHolder1_chkExportar", timeout=25)
     time.sleep(0.6)
-    step("Exportar marcado", driver, f"filtros_exportar_chk_ok_{current_date:%d_%m_%Y}")
 
-    # Select2: Tipo Exportação (Excel Sem Formatação)
-    step("Abrindo tipo de exportação (select2) e escolhendo 'Excel Sem Formatação'", driver, f"filtros_tipo_export_{current_date:%d_%m_%Y}")
+    step("Garantindo 'Exportar' marcado", driver, f"filtros_exportar_{current_date:%d_%m_%Y}")
+    ensure_checkbox_state(driver, By.ID, "ctl00_ctl00_ContentPlaceHolder1_chkExportar", desired=True, timeout=25)
+    time.sleep(0.5)
+
+    step("Selecionando tipo exportação: Excel Sem Formatação", driver, f"filtros_tipo_export_{current_date:%d_%m_%Y}")
     safe_click(driver, By.ID, "select2-ctl00_ctl00_ContentPlaceHolder1_cmbTipoExportacao-container", timeout=25)
-    time.sleep(0.6)
+    time.sleep(0.5)
     safe_click(driver, By.XPATH, "//*[normalize-space(text())='Excel Sem Formatação']", timeout=25)
-    time.sleep(0.8)
-    step("Tipo de exportação selecionado: Excel Sem Formatação", driver, f"filtros_tipo_export_ok_{current_date:%d_%m_%Y}")
-
+    time.sleep(0.6)
 
 def baixar_relatorio(driver, current_date: date, head_office: str) -> str:
-    """
-    Clica em Gerar e espera download novo do .xls. Move para target com nome único.
-    """
-    step(f"Preparando para gerar relatório (capturando lista de arquivos antes do download)", driver, f"download_before_{head_office}_{current_date:%d_%m_%Y}")
+    step("Capturando lista de arquivos antes do download", driver, f"download_before_{head_office}_{current_date:%d_%m_%Y}")
     before = set(os.listdir(download_dir))
 
     step("Clicando em 'Gerar' relatório", driver, f"download_click_gerar_{head_office}_{current_date:%d_%m_%Y}")
@@ -870,22 +1037,13 @@ def baixar_relatorio(driver, current_date: date, head_office: str) -> str:
 
     step("Movendo arquivo baixado para target com nome único", driver, f"download_move_{head_office}_{current_date:%d_%m_%Y}")
     target_path = move_downloaded_file_unique(downloaded_path, base_target_dir, current_date, head_office)
-    step(f"Arquivo movido: {os.path.basename(target_path)}", driver, f"download_moved_{head_office}_{current_date:%d_%m_%Y}")
-
     return target_path
 
-
 def extrair_df_relatorio(xls_file_path: str, current_date: date, head_office: str) -> pd.DataFrame:
-    """
-    Lê o XLS e padroniza colunas para o combinado:
-      Data, Nome, Curso, Professor, Vagas, Integrantes, Trancados, Horario,
-      Não Frequentes, Frequentes, Dias da Semana, Sede
-    """
     print(f"📄 Lendo XLS: {xls_file_path}")
     data = pd.read_excel(xls_file_path, skiprows=3)
     data.columns = [c.strip() for c in data.columns]
 
-    # Normalizações de nomes (variações comuns)
     ren = {
         "NaoFrequente": "Não Frequentes",
         "Não Frequentes": "Não Frequentes",
@@ -901,7 +1059,6 @@ def extrair_df_relatorio(xls_file_path: str, current_date: date, head_office: st
         if k in data.columns and v not in data.columns:
             data.rename(columns={k: v}, inplace=True)
 
-    # Filtra turmas ignoradas
     if "Nome" in data.columns:
         data["Nome"] = data["Nome"].apply(processar_turma)
         data = data.dropna(subset=["Nome"])
@@ -910,7 +1067,6 @@ def extrair_df_relatorio(xls_file_path: str, current_date: date, head_office: st
         print(f"ℹ️ Sem turmas válidas ({head_office} | {current_date:%d/%m/%Y}).")
         return pd.DataFrame()
 
-    # DataInicio <= hoje (BRT) (garante consistência)
     if "DataInicio" in data.columns:
         data["DataInicio"] = pd.to_datetime(data["DataInicio"], dayfirst=True, errors="coerce")
         hoje_brt = pd.Timestamp.now(tz=TZ_NAME).date()
@@ -921,22 +1077,24 @@ def extrair_df_relatorio(xls_file_path: str, current_date: date, head_office: st
         print(f"ℹ️ Sem registros após filtro DataInicio<=hoje ({head_office} | {current_date:%d/%m/%Y}).")
         return pd.DataFrame()
 
-    # Enriquecimentos
     data["Data"] = current_date.strftime("%d/%m/%Y")
     data["Curso"] = data["Nome"].apply(detectar_curso) if "Nome" in data.columns else ""
 
-    # ✅ Sede baseada no FINAL do nome da turma (com fallback para head_office)
     if "Nome" in data.columns:
-        data["Sede"] = data["Nome"].apply(lambda n: detectar_sede_por_nome_turma(n, default=head_office))
+        data["Sede_detectada"] = data["Nome"].apply(lambda n: detectar_sede_por_nome_turma(str(n), default=""))
+        data["Sede"] = data["Sede_detectada"].where(data["Sede_detectada"].astype(str).str.strip() != "", head_office)
+
+        diverg = data[(data["Sede_detectada"].astype(str).str.strip() != "") & (data["Sede_detectada"] != head_office)]
+        if not diverg.empty:
+            print(f"⚠️ {len(diverg)} linha(s) no XLS de {head_office} parecem ser de outra sede (filtro Empresas pode estar misto).")
+            print(diverg[["Nome", "Sede_detectada"]].head(10))
     else:
         data["Sede"] = head_office
 
-    # Numéricos
     for c in ["Frequentes", "Não Frequentes", "Integrantes", "Trancados", "Vagas"]:
         if c in data.columns:
             data[c] = pd.to_numeric(data[c], errors="coerce")
 
-    # Remove linhas "lixo"
     if "Frequentes" in data.columns and "Não Frequentes" in data.columns:
         condicao_remover = (
             ((data["Frequentes"] == 0) & (data["Não Frequentes"] == 0)) |
@@ -945,7 +1103,6 @@ def extrair_df_relatorio(xls_file_path: str, current_date: date, head_office: st
         )
         data = data[~condicao_remover].copy()
 
-    # Colunas finais do combinado
     selected_columns = [
         "Data", "Nome", "Curso", "Professor", "Vagas", "Integrantes",
         "Trancados", "Horario", "Não Frequentes", "Frequentes", "Dias da Semana", "Sede"
@@ -956,7 +1113,6 @@ def extrair_df_relatorio(xls_file_path: str, current_date: date, head_office: st
 
     out = data[selected_columns].copy()
     return out
-
 
 def run_sponte_frequencia(start_date_range: date | None = None, end_date_range: date | None = None) -> str:
     if not SPONTE_EMAIL or not SPONTE_PASSWORD:
@@ -973,20 +1129,35 @@ def run_sponte_frequencia(start_date_range: date | None = None, end_date_range: 
             f"Intervalo inválido: início {start_date_range:%d/%m/%Y} > fim {end_date_range:%d/%m/%Y}"
         )
 
+    # ✅ monta feriados do intervalo (uma vez) para pular no loop
+    holiday_set = None
+    if SKIP_HOLIDAYS:
+        years = list(range(start_date_range.year, end_date_range.year + 1))
+        holiday_set = make_holiday_checker(years, include_fortaleza_municipal=INCLUDE_FORTALEZA_MUNICIPAL)
+
     print("=" * 90)
     print(f"🧭 RUN_ID: {RUN_ID}")
-    print(f"🖼️ Prints em cada passo: {'ON' if STEP_SCREENSHOTS else 'OFF'}")
-    print(f"📁 Pasta de debug desta execução: {DEBUG_RUN_DIR}")
+    print(f"🖼️ Prints: {'ON' if STEP_SCREENSHOTS else 'OFF'} | HTML: {'ON' if STEP_SAVE_HTML else 'OFF'}")
+    print(f"🧠 Headless: {'ON' if HEADLESS else 'OFF'}")
+    print(f"📁 Pasta debug: {DEBUG_RUN_DIR}")
     print(f"🗓️ Janela: {start_date_range:%d/%m/%Y} -> {end_date_range:%d/%m/%Y} (BRT)")
+    print(f"🗓️ Pular feriados: {'SIM' if SKIP_HOLIDAYS else 'NÃO'} | Fortaleza municipal: {'SIM' if INCLUDE_FORTALEZA_MUNICIPAL else 'NÃO'}")
     print("=" * 90)
 
     combined_data: list[pd.DataFrame] = []
 
     current_date = start_date_range
     while current_date <= end_date_range:
-        # pula domingo
+        # domingo
         if current_date.weekday() == 6:
             print(f"⏭️ Pulando Domingo: {current_date:%d/%m/%Y}")
+            current_date += timedelta(days=1)
+            continue
+
+        # ✅ feriado
+        if SKIP_HOLIDAYS and holiday_set is not None and current_date in holiday_set:
+            motivo = str(holiday_set.get(current_date, "Feriado")).strip() or "Feriado"
+            print(f"⏭️ Pulando FERIADO: {current_date:%d/%m/%Y} — {motivo}")
             current_date += timedelta(days=1)
             continue
 
@@ -1000,49 +1171,40 @@ def run_sponte_frequencia(start_date_range: date | None = None, end_date_range: 
                 try:
                     step(f"INÍCIO: {current_date:%d/%m/%Y} | {head_office} | tentativa {attempt}/{MAX_ATTEMPTS}")
 
-                    step("Construindo driver Chrome (headless) + CDP download", None)
+                    step("Construindo driver Chrome", None)
                     driver = build_driver(download_dir=download_dir, user_data_dir=user_data_dir)
                     step("Driver criado", driver, f"driver_ok_{label}")
 
-                    # LOGIN
                     login_sponte(driver)
 
-                    # IR PARA RELATÓRIO
                     step("Abrindo URL do relatório didático (Turmas)", driver, f"goto_didatico_{label}")
                     driver.get(url_didatico)
                     wait_ready(driver, timeout=30)
                     step("Página do relatório carregada", driver, f"didatico_ok_{label}")
 
-                    # Evita zoom/headless inconsistências
                     step("Ajustando zoom 100% (se possível)", driver, f"zoom_{label}")
                     try:
                         driver.execute_script("document.body.style.zoom='100%'")
                     except Exception:
                         pass
-                    step("Zoom ajustado", driver, f"zoom_ok_{label}")
 
-                    # Seleciona sede/empresa
                     selecionar_empresas_por_sede(driver, head_office=head_office)
 
-                    # Configura filtros de frequência
                     configurar_filtros_frequencia(driver, current_date=current_date)
 
-                    # Baixa relatório
                     xls_path = baixar_relatorio(driver, current_date=current_date, head_office=head_office)
 
-                    # Extrai DF
                     step("Extraindo dados do XLS para DataFrame", driver, f"extract_df_{label}")
                     df = extrair_df_relatorio(xls_path, current_date=current_date, head_office=head_office)
 
                     if not df.empty:
-                        print(df.head(10))
                         combined_data.append(df)
                         step(f"✅ Dados adicionados ({head_office} | {current_date:%d/%m/%Y}).", driver, f"df_added_{label}")
                     else:
                         step(f"ℹ️ Sem dados para adicionar ({head_office} | {current_date:%d/%m/%Y}).", driver, f"df_empty_{label}")
 
                     success = True
-                    step(f"FIM OK: {current_date:%d/%m/%Y} | {head_office} | tentativa {attempt}", driver, f"fim_ok_{label}")
+                    step(f"FIM OK: {current_date:%d/%m/%Y} | {head_office}", driver, f"fim_ok_{label}")
                     break
 
                 except Exception as e:
@@ -1070,7 +1232,6 @@ def run_sponte_frequencia(start_date_range: date | None = None, end_date_range: 
 
         current_date += timedelta(days=1)
 
-    # Salva combinado
     step("Consolidando DataFrames coletados", None)
     if combined_data:
         final_df = pd.concat(combined_data, ignore_index=True)
@@ -1080,7 +1241,15 @@ def run_sponte_frequencia(start_date_range: date | None = None, end_date_range: 
             "Horario", "Não Frequentes", "Frequentes", "Dias da Semana", "Sede"
         ])
 
-    # sobrescreve arquivo local
+    if not final_df.empty and "Nome" in final_df.columns:
+        final_df["_sede_code"] = final_df["Nome"].astype(str).apply(lambda n: detectar_sede_por_nome_turma(n, default=""))
+        final_df["_has_code"] = (final_df["_sede_code"].astype(str).str.strip() != "").astype(int)
+        final_df["Sede"] = final_df["_sede_code"].where(final_df["_has_code"] == 1, final_df.get("Sede", ""))
+
+        final_df = final_df.sort_values(["_has_code"], ascending=False)
+        final_df = final_df.drop_duplicates(subset=["Data", "Nome"], keep="first").reset_index(drop=True)
+        final_df.drop(columns=["_sede_code", "_has_code"], inplace=True)
+
     step(f"Salvando Excel consolidado em: {COMBINED_PATH}", None)
     if os.path.exists(COMBINED_PATH):
         os.remove(COMBINED_PATH)
@@ -1133,13 +1302,11 @@ def construir_relatorio_100(df_base: pd.DataFrame) -> pd.DataFrame:
     df100 = df100.sort_values(["Data_dt", "Sede", "Turma"], na_position="last").reset_index(drop=True)
     return df100
 
-
 def gerar_e_enviar_100_presenca(input_file: str) -> str:
     step("Gerando relatório de 100% presença (lendo Excel consolidado)", None)
     df = pd.read_excel(input_file)
     df.columns = [c.strip() for c in df.columns]
 
-    # padroniza nomes
     df.rename(columns={
         "Nome": "Turma",
         "Frequentes": "Frequente",
@@ -1149,7 +1316,6 @@ def gerar_e_enviar_100_presenca(input_file: str) -> str:
         "Data Início": "DataInicio",
     }, inplace=True)
 
-    # ignora GT
     if "Turma" in df.columns:
         df = df[~df["Turma"].astype(str).str.startswith("GT")].copy()
 
@@ -1194,11 +1360,9 @@ def _try_paths():
             uniq.append(c)
     return [p for p in uniq if os.path.exists(p)]
 
-
 def build_creds_any(scopes):
     credentials_raw = os.getenv("GOOGLE_CREDENTIALS_JSON")
 
-    # Caso 1: env contém JSON inline
     if credentials_raw and credentials_raw.strip().startswith("{"):
         try:
             cred_dict = json.loads(credentials_raw)
@@ -1206,14 +1370,12 @@ def build_creds_any(scopes):
             raise RuntimeError(f"GOOGLE_CREDENTIALS_JSON parece JSON mas falhou ao parsear: {e}")
         return ServiceAccountCredentials.from_json_keyfile_dict(cred_dict, scopes)
 
-    # Caso 2: env contém caminho para o arquivo
     if credentials_raw and credentials_raw.strip():
         cred_path = os.path.abspath(credentials_raw.strip())
         if not os.path.exists(cred_path):
             raise FileNotFoundError(f"Caminho de credenciais não existe: {cred_path}")
         return ServiceAccountCredentials.from_json_keyfile_name(cred_path, scopes)
 
-    # Caso 3: fallback para arquivos locais conhecidos
     tried = []
     for path in _try_paths():
         try:
@@ -1228,7 +1390,6 @@ def build_creds_any(scopes):
         "ou coloque um credentials.json ao lado do script.\n"
         f"Tentativas:\n{hints}"
     )
-
 
 def _norm_val(valor, coluna_nome, colunas_numericas):
     if valor is None or (isinstance(valor, float) and pd.isna(valor)) or (isinstance(valor, str) and valor.strip() == ""):
@@ -1250,7 +1411,6 @@ def _norm_val(valor, coluna_nome, colunas_numericas):
 
     return str(valor)
 
-
 def _row_matches_header(row: list[str], expected: list[str]) -> bool:
     if not row:
         return False
@@ -1260,22 +1420,9 @@ def _row_matches_header(row: list[str], expected: list[str]) -> bool:
         return False
     return row_norm[:len(exp_norm)] == exp_norm
 
-
 def ensure_sheet_header(sheet_destino, expected_header: list[str]) -> tuple[list[str], list[list[str]], int]:
-    """
-    Garante que exista 1 linha de cabeçalho.
-
-    Retorna:
-      (cabecalho, dados_existentes, data_start_row)
-
-    - Se a planilha estiver vazia: cria cabeçalho na linha 1.
-    - Se já existir cabeçalho na linha 1: usa.
-    - Se existir cabeçalho na linha 2 (caso raro, planilha com título na linha 1): usa linha 2.
-    - Se não encontrar cabeçalho: força cabeçalho na linha 1 (overwrites linha 1).
-    """
     valores_existentes = sheet_destino.get_all_values()
 
-    # Caso: totalmente vazia
     if not valores_existentes:
         sheet_destino.update("A1", [expected_header], value_input_option="RAW")
         cabecalho = expected_header
@@ -1284,21 +1431,18 @@ def ensure_sheet_header(sheet_destino, expected_header: list[str]) -> tuple[list
         print("🧾 Cabeçalho criado (planilha estava vazia).")
         return cabecalho, dados_existentes, data_start_row
 
-    # Caso: header na linha 1
     if _row_matches_header(valores_existentes[0], expected_header):
         cabecalho = [c.strip() for c in valores_existentes[0][:len(expected_header)]]
         dados_existentes = valores_existentes[1:]
         data_start_row = 2
         return cabecalho, dados_existentes, data_start_row
 
-    # Caso: header na linha 2 (título na linha 1)
     if len(valores_existentes) >= 2 and _row_matches_header(valores_existentes[1], expected_header):
         cabecalho = [c.strip() for c in valores_existentes[1][:len(expected_header)]]
         dados_existentes = valores_existentes[2:]
         data_start_row = 3
         return cabecalho, dados_existentes, data_start_row
 
-    # Caso: não tem header no formato esperado -> força na linha 1
     sheet_destino.update("A1", [expected_header], value_input_option="RAW")
     valores_existentes = sheet_destino.get_all_values()
     cabecalho = expected_header
@@ -1307,9 +1451,7 @@ def ensure_sheet_header(sheet_destino, expected_header: list[str]) -> tuple[list
     print("🧾 Cabeçalho forçado na linha 1 (não existia no formato esperado).")
     return cabecalho, dados_existentes, data_start_row
 
-
 def atualizar_linhas(sheet_destino, df_novos: pd.DataFrame, colunas_numericas: list[str]):
-    # ✅ Agora: aceita 1 cabeçalho, e cria/força cabeçalho se não tiver.
     cabecalho, dados_existentes, data_start_row = ensure_sheet_header(sheet_destino, SHEET_HEADER_FREQ)
 
     try:
@@ -1319,24 +1461,18 @@ def atualizar_linhas(sheet_destino, df_novos: pd.DataFrame, colunas_numericas: l
         print(f"Erro ao localizar colunas no cabeçalho: {e}")
         return
 
-    # Mapa de chave -> linha (1-based do Google Sheets)
     index_map = {}
     for i, linha in enumerate(dados_existentes):
-        # normaliza tamanho da linha
         if len(linha) < len(cabecalho):
             linha = linha + [""] * (len(cabecalho) - len(linha))
         chave = (linha[idx_data], linha[idx_turma])
         if chave != ("", ""):
             index_map[chave] = i + data_start_row
 
-    # Atualiza/insere
     for _, row in df_novos.iterrows():
         row = row.fillna("")
-
-        # chave sempre por Data + Turma
         chave = (str(row.get("Data", "")), str(row.get("Turma", "")))
 
-        # monta valores alinhados ao cabeçalho (evita depender da ordem do DF)
         valores_alinhados = []
         for col_name in cabecalho:
             v = row.get(col_name, "")
@@ -1368,14 +1504,9 @@ def atualizar_linhas(sheet_destino, df_novos: pd.DataFrame, colunas_numericas: l
             sheet_destino.append_row(valores_norm, value_input_option="USER_ENTERED")
             print(f"Inserido: {chave}")
 
-        time.sleep(0.8)
-
+        time.sleep(0.6)
 
 def detectar_linhas_divergentes_por_sheet(service_ro, spreadsheet_id: str, sheet_index: int, tipos_ideais: dict[int, str]) -> list[int]:
-    """
-    Lê gridData do sheet_index e identifica linhas onde o tipo efetivo diverge do ideal.
-    tipos_ideais: {col_index_1based: "DATE"/"NUMBER"/"STRING"/...}
-    """
     result = service_ro.spreadsheets().get(
         spreadsheetId=spreadsheet_id,
         includeGridData=True
@@ -1423,7 +1554,6 @@ def detectar_linhas_divergentes_por_sheet(service_ro, spreadsheet_id: str, sheet
 
     return linhas_erradas
 
-
 def corrigir_linhas_tipagem(service_rw, spreadsheet_id: str, worksheet, linhas_alvo: list[int], colunas_numericas_nomes: list[str]):
     valores_existentes = worksheet.get_all_values()
     if not valores_existentes:
@@ -1454,7 +1584,6 @@ def corrigir_linhas_tipagem(service_rw, spreadsheet_id: str, worksheet, linhas_a
         if len(linha) < len(cabecalho):
             linha += [""] * (len(cabecalho) - len(linha))
 
-        # Data -> ISO (garante tipagem DATE)
         if idx_data is not None and idx_data < len(linha):
             raw = linha[idx_data]
             if raw:
@@ -1464,7 +1593,6 @@ def corrigir_linhas_tipagem(service_rw, spreadsheet_id: str, worksheet, linhas_a
                 if pd.notna(dt):
                     linha[idx_data] = dt.strftime("%Y-%m-%d")
 
-        # Numéricos -> número puro
         for idx_num in idxs_numericos:
             if idx_num < len(linha):
                 raw = linha[idx_num]
@@ -1494,11 +1622,9 @@ def corrigir_linhas_tipagem(service_rw, spreadsheet_id: str, worksheet, linhas_a
     ).execute()
     print(f"✅ Tipagem reaplicada em {len(updates)} linha(s) na aba: {worksheet.title}")
 
-
 def aplicar_formatacoes_attendance(service_rw, spreadsheet_id: str, worksheet):
     requests = []
 
-    # Coluna A (Data) -> dd/MM/yyyy
     requests.append({
         "repeatCell": {
             "range": {"sheetId": worksheet.id, "startColumnIndex": 0, "endColumnIndex": 1},
@@ -1507,7 +1633,6 @@ def aplicar_formatacoes_attendance(service_rw, spreadsheet_id: str, worksheet):
         }
     })
 
-    # Numéricas: E (4), F (5), G (6), I (8), J (9) -> 0
     for start_idx in [4, 5, 6, 8, 9]:
         requests.append({
             "repeatCell": {
@@ -1523,13 +1648,11 @@ def aplicar_formatacoes_attendance(service_rw, spreadsheet_id: str, worksheet):
     ).execute()
     print(f"📅 Formatação aplicada na aba: {worksheet.title}")
 
-
 def google_sheets_sync_frequencia(input_file: str):
     step("Iniciando sync com Google Sheets (lendo Excel consolidado)", None)
     df = pd.read_excel(input_file)
     df.columns = [c.strip() for c in df.columns]
 
-    # padroniza nomes para base
     df.rename(columns={
         "Nome": "Turma",
         "Frequentes": "Frequente",
@@ -1542,21 +1665,18 @@ def google_sheets_sync_frequencia(input_file: str):
     if "Turma" not in df.columns or "Data" not in df.columns:
         raise RuntimeError("Colunas 'Turma' e 'Data' são necessárias no arquivo consolidado.")
 
-    # ignora GT
     df = df[~df["Turma"].astype(str).str.startswith("GT")].copy()
 
-    # ✅ Reforça a Sede com base no NOME DA TURMA (garante correção mesmo se vier errado do XLS)
     if "Sede" not in df.columns:
         df["Sede"] = ""
-    df["Sede"] = df["Turma"].astype(str).apply(lambda n: detectar_sede_por_nome_turma(n, default=""))
+    sede_calc = df["Turma"].astype(str).apply(lambda n: detectar_sede_por_nome_turma(n, default=""))
+    df["Sede"] = sede_calc.where(sede_calc.astype(str).str.strip() != "", df["Sede"])
 
-    # ✅ Ajusta nomes EXACTOS para o cabeçalho do Google Sheets solicitado
     df.rename(columns={
         "Não Frequentes": "NaoFrequente",
         "Dias da Semana": "DiasSemana",
     }, inplace=True)
 
-    # Garante todas as colunas do header (mesmo vazias) e ordena
     for c in SHEET_HEADER_FREQ:
         if c not in df.columns:
             df[c] = ""
@@ -1567,7 +1687,6 @@ def google_sheets_sync_frequencia(input_file: str):
         if coluna in df.columns:
             df[coluna] = pd.to_numeric(df[coluna], errors="coerce")
 
-    # separa online/presencial
     df_online = df[df["Turma"].astype(str).str.len().ge(3) & (df["Turma"].astype(str).str[2].str.upper() == "L")].copy()
     df_presencial = df[~(df["Turma"].astype(str).str.len().ge(3) & (df["Turma"].astype(str).str[2].str.upper() == "L"))].copy()
 
@@ -1591,10 +1710,6 @@ def google_sheets_sync_frequencia(input_file: str):
     step("Atualizando linhas (Aba Online)", None)
     atualizar_linhas(sheet_online, df_online, colunas_numericas=colunas_numericas)
 
-    # Tipos ideais (por índice 1-based) — baseado no header solicitado:
-    # A:Data (DATE), B:Turma (STRING), C:Curso (STRING), D:Professor (STRING),
-    # E:Vagas (NUMBER), F:Integrantes (NUMBER), G:Trancados (NUMBER), H:Horario (STRING),
-    # I:NaoFrequente (NUMBER), J:Frequente (NUMBER), K:DiasSemana (STRING), L:Sede (STRING)
     tipos_ideais = {
         1: "DATE", 2: "STRING", 3: "STRING", 4: "STRING",
         5: "NUMBER", 6: "NUMBER", 7: "NUMBER", 8: "STRING",
@@ -1638,6 +1753,468 @@ def google_sheets_sync_frequencia(input_file: str):
 
     step("✅ Sincronização Google Sheets concluída", None)
 
+    if FIX_SEDES_GOOGLE:
+        try:
+            step("🔧 Rodando pente-fino final de Sedes no Google Sheets", None)
+            fix_sedes_google_sheet(
+                spreadsheet_id=GOOGLE_SHEET_ID_FREQ,
+                all_sheets=False,
+                dry_run=False,
+                sort_after=FIX_SEDES_GOOGLE_SORT,
+                creds_rw=creds_rw,
+            )
+        except Exception as e:
+            print(f"⚠️ Falha no pente-fino de sedes (Sheets): {e}")
+
+
+# =======================
+# PENTE FINO: FIX SEDES NO GOOGLE SHEETS
+# =======================
+
+HEADER_SCAN_ROWS = 5
+BATCH_SIZE = 500
+
+def col_to_a1(col_1based: int) -> str:
+    s = ""
+    n = col_1based
+    while n > 0:
+        n, r = divmod(n - 1, 26)
+        s = chr(65 + r) + s
+    return s
+
+def find_header_row(values: List[List[str]]) -> Optional[int]:
+    limit = min(len(values), HEADER_SCAN_ROWS)
+    for i in range(limit):
+        row = [str(c).strip() for c in (values[i] or [])]
+        if any(c == "Turma" for c in row):
+            return i
+    return None
+
+def chunked(lst: List[Dict[str, Any]], n: int) -> Iterator[List[Dict[str, Any]]]:
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
+
+def fix_sedes_in_worksheet(
+    service_rw,
+    spreadsheet_id: str,
+    worksheet,
+    dry_run: bool = False,
+) -> Tuple[int, int, Dict[str, int]]:
+    title = worksheet.title
+    values = worksheet.get_all_values()
+
+    if not values:
+        print(f"• [{title}] Aba vazia — pulando.")
+        return 0, 0, {}
+
+    header_idx = find_header_row(values)
+    if header_idx is None:
+        print(f"• [{title}] Não achei header com 'Turma' nas primeiras {HEADER_SCAN_ROWS} linhas — pulando.")
+        return 0, 0, {}
+
+    header = [str(c).strip() for c in values[header_idx]]
+    while header and header[-1] == "":
+        header.pop()
+
+    if "Turma" not in header:
+        print(f"• [{title}] Header encontrado, mas sem 'Turma' — pulando.")
+        return 0, 0, {}
+
+    turma_col_1based = header.index("Turma") + 1
+
+    sede_exists = "Sede" in header
+    if not sede_exists:
+        sede_col_1based = len(header) + 1
+        if not dry_run:
+            cell = f"{col_to_a1(sede_col_1based)}{header_idx + 1}"
+            worksheet.update(cell, "Sede", value_input_option="RAW")
+        header.append("Sede")
+        print(f"• [{title}] Coluna 'Sede' não existia — criada em {col_to_a1(sede_col_1based)}.")
+    else:
+        sede_col_1based = header.index("Sede") + 1
+
+    start_row_1based = header_idx + 2
+    total_rows = max(0, len(values) - (header_idx + 1))
+
+    updates: List[Dict[str, Any]] = []
+    contagem_por_sede: Dict[str, int] = {"Aldeota": 0, "Sul": 0, "Bezerra": 0}
+
+    for offset, row in enumerate(values[header_idx + 1:], start=0):
+        row_number = start_row_1based + offset
+
+        if len(row) < max(turma_col_1based, sede_col_1based):
+            row = row + [""] * (max(turma_col_1based, sede_col_1based) - len(row))
+
+        turma = str(row[turma_col_1based - 1]).strip()
+        sede_atual = str(row[sede_col_1based - 1]).strip()
+
+        if not turma:
+            continue
+
+        sede_nova = detectar_sede_por_nome_turma(turma, default="")
+        if not sede_nova:
+            continue
+
+        if sede_atual != sede_nova:
+            rng = f"{title}!{col_to_a1(sede_col_1based)}{row_number}"
+            updates.append({"range": rng, "values": [[sede_nova]]})
+            contagem_por_sede[sede_nova] = contagem_por_sede.get(sede_nova, 0) + 1
+
+    if not updates:
+        print(f"• [{title}] OK — nenhuma divergência encontrada. (linhas analisadas: {total_rows})")
+        return total_rows, 0, contagem_por_sede
+
+    print(f"• [{title}] Divergências: {len(updates)} (linhas analisadas: {total_rows})")
+    if dry_run:
+        print("  (dry-run) Não apliquei alterações.")
+        return total_rows, len(updates), contagem_por_sede
+
+    for part in chunked(updates, BATCH_SIZE):
+        body = {"valueInputOption": "USER_ENTERED", "data": part}
+        service_rw.spreadsheets().values().batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body=body
+        ).execute()
+        time.sleep(0.3)
+
+    print(f"  ✅ Aplicado: {len(updates)} atualizações na coluna 'Sede'.")
+    return total_rows, len(updates), contagem_por_sede
+
+def sort_worksheet_by_data_then_turma(service_rw, spreadsheet_id: str, worksheet, header_row_1based: int):
+    values = worksheet.get_all_values()
+    if not values or len(values) <= header_row_1based:
+        return
+
+    header = [str(c).strip() for c in values[header_row_1based - 1]]
+    if "Data" not in header or "Turma" not in header:
+        print(f"• [{worksheet.title}] Sem colunas 'Data' e/ou 'Turma' — skip sort.")
+        return
+
+    data_col = header.index("Data")
+    turma_col = header.index("Turma")
+
+    last_row = len(values)
+    last_col = max(1, len(header))
+
+    request = {
+        "sortRange": {
+            "range": {
+                "sheetId": worksheet.id,
+                "startRowIndex": header_row_1based,
+                "endRowIndex": last_row,
+                "startColumnIndex": 0,
+                "endColumnIndex": last_col,
+            },
+            "sortSpecs": [
+                {"dimensionIndex": data_col, "sortOrder": "ASCENDING"},
+                {"dimensionIndex": turma_col, "sortOrder": "ASCENDING"},
+            ],
+        }
+    }
+
+    service_rw.spreadsheets().batchUpdate(
+        spreadsheetId=spreadsheet_id,
+        body={"requests": [request]}
+    ).execute()
+    print(f"• [{worksheet.title}] ✅ Ordenado por Data -> Turma.")
+
+def fix_sedes_google_sheet(
+    spreadsheet_id: str,
+    all_sheets: bool = False,
+    dry_run: bool = False,
+    sort_after: bool = False,
+    creds_rw=None,
+):
+    if creds_rw is None:
+        scopes_rw = ["https://www.googleapis.com/auth/spreadsheets"]
+        creds_rw = build_creds_any(scopes_rw)
+
+    client = gspread.authorize(creds_rw)
+    service_rw = build("sheets", "v4", credentials=creds_rw)
+
+    sh = client.open_by_key(spreadsheet_id)
+
+    if all_sheets:
+        worksheets = sh.worksheets()
+    else:
+        worksheets = []
+        ws0 = sh.get_worksheet(0)
+        if ws0:
+            worksheets.append(ws0)
+        ws1 = sh.get_worksheet(1)
+        if ws1:
+            worksheets.append(ws1)
+
+    print("=" * 90)
+    print("🔎 Pente fino de Sedes (códigos 72546/74070/488365 na Turma)")
+    print(f"Planilha: {spreadsheet_id}")
+    print(f"Abas: {[w.title for w in worksheets]}")
+    print(f"Dry-run: {'SIM' if dry_run else 'NÃO'} | Sort: {'SIM' if sort_after else 'NÃO'}")
+    print("=" * 90)
+
+    total_linhas = 0
+    total_alteradas = 0
+    total_por_sede: Dict[str, int] = {"Aldeota": 0, "Sul": 0, "Bezerra": 0}
+
+    for ws in worksheets:
+        values = ws.get_all_values()
+        header_idx = find_header_row(values) if values else None
+        header_row_1based = (header_idx + 1) if header_idx is not None else 1
+
+        linhas, alteradas, por_sede = fix_sedes_in_worksheet(
+            service_rw=service_rw,
+            spreadsheet_id=spreadsheet_id,
+            worksheet=ws,
+            dry_run=dry_run,
+        )
+
+        total_linhas += linhas
+        total_alteradas += alteradas
+        for k, v in por_sede.items():
+            total_por_sede[k] = total_por_sede.get(k, 0) + v
+
+        if sort_after and not dry_run:
+            try:
+                sort_worksheet_by_data_then_turma(service_rw, spreadsheet_id, ws, header_row_1based)
+            except Exception as e:
+                print(f"• [{ws.title}] ⚠️ Falha ao ordenar: {e}")
+
+    print("\n" + "=" * 90)
+    print("✅ Resumo pente-fino sedes")
+    print(f"Linhas analisadas (aprox): {total_linhas}")
+    print(f"Atualizações aplicadas: {total_alteradas}")
+    print("Atualizações por sede:")
+    for sede in ["Aldeota", "Sul", "Bezerra"]:
+        print(f"  - {sede}: {total_por_sede.get(sede, 0)}")
+    print("=" * 90)
+
+
+# =======================
+# ✅ PENTE-FINO FERIADOS NO GOOGLE SHEETS
+# =======================
+
+HOL_HEADER_SCAN_ROWS = 5
+HOL_BATCH_SIZE = 200
+
+def hol_find_header_row(values: List[List[str]], required_col: str) -> Optional[int]:
+    limit = min(len(values), HOL_HEADER_SCAN_ROWS)
+    for i in range(limit):
+        row = [str(c).strip() for c in (values[i] or [])]
+        if any(c == required_col for c in row):
+            return i
+    return None
+
+def hol_parse_date_br(value: str) -> Optional[date]:
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s:
+        return None
+
+    fmts = [
+        "%d/%m/%Y",
+        "%d/%m/%Y %H:%M",
+        "%d/%m/%Y %H:%M:%S",
+        "%Y-%m-%d",
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%d %H:%M:%S",
+        "%d-%m-%Y",
+        "%d/%m/%y",
+        "%Y/%m/%d",
+        "%d.%m.%Y",
+    ]
+    for fmt in fmts:
+        try:
+            return datetime.strptime(s, fmt).date()
+        except ValueError:
+            pass
+    return None
+
+def hol_group_contiguous(indices_0based: List[int]) -> List[Tuple[int, int]]:
+    if not indices_0based:
+        return []
+    idx = sorted(indices_0based)
+    ranges: List[Tuple[int, int]] = []
+    start = prev = idx[0]
+    for x in idx[1:]:
+        if x == prev + 1:
+            prev = x
+            continue
+        ranges.append((start, prev + 1))
+        start = prev = x
+    ranges.append((start, prev + 1))
+    return ranges
+
+def hol_chunked(lst: List[Dict[str, Any]], n: int) -> Iterator[List[Dict[str, Any]]]:
+    for i in range(0, len(lst), n):
+        yield lst[i:i + n]
+
+def delete_holiday_rows_in_worksheet(
+    service_rw,
+    spreadsheet_id: str,
+    worksheet,
+    date_col_name: str = "Data",
+    include_fortaleza_municipal: bool = True,
+    dry_run: bool = False,
+) -> Tuple[int, int]:
+    title = worksheet.title
+    values = worksheet.get_all_values()
+
+    if not values:
+        print(f"• [{title}] Aba vazia — pulando.")
+        return 0, 0
+
+    header_idx = hol_find_header_row(values, required_col=date_col_name)
+    if header_idx is None:
+        print(f"• [{title}] Não achei header com coluna '{date_col_name}' nas primeiras {HOL_HEADER_SCAN_ROWS} linhas — pulando.")
+        return 0, 0
+
+    header = [str(c).strip() for c in values[header_idx] or []]
+    if date_col_name not in header:
+        print(f"• [{title}] Header encontrado, mas sem '{date_col_name}' — pulando.")
+        return 0, 0
+
+    date_col_0 = header.index(date_col_name)
+
+    data_rows = values[header_idx + 1:]
+    if not data_rows:
+        print(f"• [{title}] Sem linhas de dados abaixo do header — pulando.")
+        return 0, 0
+
+    years: List[int] = []
+    parsed_dates: List[Optional[date]] = []
+
+    for row in data_rows:
+        cell = row[date_col_0] if date_col_0 < len(row) else ""
+        d = hol_parse_date_br(cell)
+        parsed_dates.append(d)
+        if d:
+            years.append(d.year)
+
+    holiday_set = make_holiday_checker(years, include_fortaleza_municipal=include_fortaleza_municipal)
+
+    to_delete_row_indices: List[int] = []
+    reasons: Dict[str, int] = {}
+
+    for offset, d in enumerate(parsed_dates):
+        if not d:
+            continue
+        if d in holiday_set:
+            sheet_row_index_0 = (header_idx + 1) + offset
+            to_delete_row_indices.append(sheet_row_index_0)
+            nome = str(holiday_set.get(d, "Feriado")).strip() or "Feriado"
+            reasons[nome] = reasons.get(nome, 0) + 1
+
+    linhas_analisadas = len(data_rows)
+
+    if not to_delete_row_indices:
+        print(f"• [{title}] OK — nenhum feriado encontrado. (linhas analisadas: {linhas_analisadas})")
+        return linhas_analisadas, 0
+
+    ranges = hol_group_contiguous(to_delete_row_indices)
+    ranges_desc = sorted(ranges, key=lambda t: t[0], reverse=True)
+
+    total_to_delete = sum((end - start) for start, end in ranges_desc)
+
+    print(f"• [{title}] Feriados detectados: {total_to_delete} linha(s) para deletar (linhas analisadas: {linhas_analisadas})")
+    if reasons:
+        top = sorted(reasons.items(), key=lambda kv: kv[1], reverse=True)
+        resumo = ", ".join([f"{k}={v}" for k, v in top[:6]])
+        print(f"  Motivos (top): {resumo}")
+
+    if dry_run:
+        print("  (dry-run) Não deletei nada.")
+        return linhas_analisadas, total_to_delete
+
+    requests: List[Dict[str, Any]] = []
+    for start, end in ranges_desc:
+        requests.append({
+            "deleteDimension": {
+                "range": {
+                    "sheetId": worksheet.id,
+                    "dimension": "ROWS",
+                    "startIndex": start,
+                    "endIndex": end,
+                }
+            }
+        })
+
+    deleted = 0
+    for part in hol_chunked([{"requests": [r]} for r in requests], HOL_BATCH_SIZE):
+        merged: List[Dict[str, Any]] = []
+        for item in part:
+            merged.extend(item["requests"])
+        body = {"requests": merged}
+        service_rw.spreadsheets().batchUpdate(
+            spreadsheetId=spreadsheet_id,
+            body=body
+        ).execute()
+        deleted += sum((r["deleteDimension"]["range"]["endIndex"] - r["deleteDimension"]["range"]["startIndex"]) for r in merged)
+        time.sleep(0.5)
+
+    print(f"  ✅ Deletado: {deleted} linha(s).")
+    return linhas_analisadas, deleted
+
+def pente_fino_feriados_google_sheet(
+    spreadsheet_id: str,
+    all_sheets: bool = False,
+    dry_run: bool = False,
+    date_col: str = "Data",
+    include_fortaleza_municipal: bool = True,
+    creds_rw=None,
+) -> Tuple[int, int]:
+    if creds_rw is None:
+        scopes_rw = ["https://www.googleapis.com/auth/spreadsheets"]
+        creds_rw = build_creds_any(scopes_rw)
+
+    client = gspread.authorize(creds_rw)
+    service_rw = build("sheets", "v4", credentials=creds_rw)
+
+    sh = client.open_by_key(spreadsheet_id)
+
+    if all_sheets:
+        worksheets = sh.worksheets()
+    else:
+        worksheets = []
+        ws0 = sh.get_worksheet(0)
+        if ws0:
+            worksheets.append(ws0)
+        ws1 = sh.get_worksheet(1)
+        if ws1:
+            worksheets.append(ws1)
+
+    print("=" * 90)
+    print("🗑️ Pente-fino de feriados (BR + CE + Fortaleza + Carnaval/Cinzas)")
+    print(f"Planilha: {spreadsheet_id}")
+    print(f"Abas: {[w.title for w in worksheets]}")
+    print(f"Dry-run: {'SIM' if dry_run else 'NÃO'}")
+    print(f"Coluna de data: {date_col}")
+    print(f"Fortaleza municipal: {'SIM' if include_fortaleza_municipal else 'NÃO'}")
+    print("=" * 90)
+
+    total_analisadas = 0
+    total_deletadas = 0
+
+    for ws in worksheets:
+        analisadas, deletadas = delete_holiday_rows_in_worksheet(
+            service_rw=service_rw,
+            spreadsheet_id=spreadsheet_id,
+            worksheet=ws,
+            date_col_name=date_col,
+            include_fortaleza_municipal=include_fortaleza_municipal,
+            dry_run=dry_run,
+        )
+        total_analisadas += analisadas
+        total_deletadas += deletadas
+
+    print("\n" + "=" * 90)
+    print("✅ Resumo pente-fino feriados")
+    print(f"Linhas analisadas (aprox): {total_analisadas}")
+    print(f"Linhas deletadas: {total_deletadas}")
+    print("=" * 90)
+
+    return total_analisadas, total_deletadas
+
 
 # =======================
 # MAIN
@@ -1650,7 +2227,6 @@ def main():
     start_dt = _parse_date_any(args.inicio) if args.inicio else None
     end_dt = _parse_date_any(args.fim) if args.fim else None
 
-    # se passou intervalo manual, NÃO envia e-mail (mesmo sem --no-email)
     if args.no_email or args.inicio or args.fim:
         SEND_EMAIL = False
 
@@ -1663,9 +2239,37 @@ def main():
         gerar_e_enviar_100_presenca(output_path)
         step("Relatório 100% presença concluído", None)
     else:
-        step("Modo NO-EMAIL ativo: pulando relatório 100% presença (gerar/enviar)", None)
+        step("Modo NO-EMAIL ativo: pulando relatório 100% presença", None)
 
     google_sheets_sync_frequencia(output_path)
+    step("Sync Google Sheets concluído", None)
+
+    if PENTE_FINO_FERIADOS_GOOGLE:
+        try:
+            step("🗑️ Rodando pente-fino final de feriados no Google Sheets", None)
+            pente_fino_feriados_google_sheet(
+                spreadsheet_id=GOOGLE_SHEET_ID_FREQ,
+                all_sheets=PENTE_FINO_FERIADOS_ALL_SHEETS,
+                dry_run=PENTE_FINO_FERIADOS_DRYRUN,
+                date_col=PENTE_FINO_FERIADOS_DATE_COL,
+                include_fortaleza_municipal=INCLUDE_FORTALEZA_MUNICIPAL,
+                creds_rw=None,
+            )
+
+            # opcional: roda de novo o pente-fino de sedes depois de deletar linhas
+            if FIX_SEDES_GOOGLE and not PENTE_FINO_FERIADOS_DRYRUN:
+                step("🔧 Reaplicando pente-fino de Sedes após remover feriados", None)
+                fix_sedes_google_sheet(
+                    spreadsheet_id=GOOGLE_SHEET_ID_FREQ,
+                    all_sheets=False,
+                    dry_run=False,
+                    sort_after=FIX_SEDES_GOOGLE_SORT,
+                    creds_rw=None,
+                )
+
+        except Exception as e:
+            print(f"⚠️ Falha no pente-fino de feriados (Sheets): {e}")
+
     step("FIM do pipeline (tudo concluído)", None)
     print(f"📌 Debug/prints desta execução: {DEBUG_RUN_DIR}")
 
