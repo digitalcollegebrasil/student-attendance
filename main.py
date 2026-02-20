@@ -103,8 +103,6 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.application import MIMEApplication
 from email.utils import formataddr
-
-# ✅ FERIADOS
 import holidays
 
 
@@ -574,6 +572,53 @@ def js_set_value_and_events(driver, element, value: str):
         element,
         value,
     )
+
+def _is_displayed_safe(driver, by, locator) -> bool:
+    try:
+        el = driver.find_element(by, locator)
+        return el.is_displayed()
+    except Exception:
+        return False
+
+def is_sponte_loading(driver) -> bool:
+    """
+    True se o loading principal do Sponte estiver visível.
+    Cobre:
+      - #processing-modal (overlay full screen)
+      - container do UpdateProgress (upgProcessando..._upg)
+    """
+    # 1) Overlay principal
+    if _is_displayed_safe(driver, By.ID, "processing-modal"):
+        return True
+
+    # 2) Wrapper do UpdateProgress
+    if _is_displayed_safe(driver, By.ID, "ctl00_ctl00_ContentPlaceHolder1_upgProcessando1_upg"):
+        return True
+
+    # 3) Fallback por JS (às vezes display none / aria-hidden)
+    try:
+        return bool(driver.execute_script("""
+            const a = document.getElementById('processing-modal');
+            const b = document.getElementById('ctl00_ctl00_ContentPlaceHolder1_upgProcessando1_upg');
+            function vis(el){
+              if(!el) return false;
+              const st = window.getComputedStyle(el);
+              return st && st.display !== 'none' && st.visibility !== 'hidden' && st.opacity !== '0';
+            }
+            return vis(a) || vis(b);
+        """))
+    except Exception:
+        return False
+
+def wait_sponte_loading_done(driver, timeout: int = 30):
+    """
+    Espera o loading principal sumir.
+    Não falha se o elemento nem existir.
+    """
+    def _done(d):
+        return not is_sponte_loading(d)
+
+    WebDriverWait(driver, timeout).until(_done)
 
 def wait_for_postback(driver, timeout: int = 25):
     """
