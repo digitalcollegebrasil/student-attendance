@@ -447,6 +447,7 @@ def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
         # inteiros finais
         data[col] = data[col].apply(lambda x: None if pd.isna(x) else int(x))
+        data[col] = data[col].astype(object)
 
     # descarta linhas sem turma
     data = data[data["Turma"].notna()].copy()
@@ -470,6 +471,9 @@ def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     data["data_aula"] = data["data_aula"].dt.date
 
     data = data.drop_duplicates(subset=["data_aula", "turma"], keep="last").reset_index(drop=True)
+
+    data = data.astype(object)
+    data = data.where(pd.notnull(data), None)
 
     print("\n[DEBUG] Maiores valores por coluna numerica:")
     for col in ["vagas", "integrantes", "trancados", "nao_frequente", "frequente"]:
