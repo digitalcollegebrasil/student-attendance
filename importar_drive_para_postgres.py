@@ -397,20 +397,61 @@ def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     data = data[expected].copy()
 
+    # remove linhas de cabecalho repetido no meio da planilha
+    data = data[
+        ~(
+            data["Data"].astype(str).str.strip().eq("Data") &
+            data["Turma"].astype(str).str.strip().eq("Turma")
+        )
+    ].copy()
+
+    # Data
     data["Data"] = pd.to_datetime(data["Data"], dayfirst=True, errors="coerce")
     data = data.dropna(subset=["Data"]).copy()
 
-    for col in ["Vagas", "Integrantes", "Trancados", "NaoFrequente", "Frequente"]:
-        data[col] = pd.to_numeric(data[col], errors="coerce")
-
+    # textos
     for col in ["Turma", "Curso", "Professor", "Horario", "DiasSemana", "Sede"]:
         data[col] = data[col].apply(
             lambda x: None if pd.isna(x) or str(x).strip() == "" else str(x).strip()
         )
 
+    # detectar sede pela turma
     sede_calc = data["Turma"].apply(lambda x: detectar_sede_por_nome_turma(str(x), default="") if x else "")
     data["Sede"] = sede_calc.where(sede_calc.astype(str).str.strip() != "", data["Sede"])
 
+    # normalizacao numerica robusta
+    numeric_cols = ["Vagas", "Integrantes", "Trancados", "NaoFrequente", "Frequente"]
+    pg_int_max = 2147483647
+
+    for col in numeric_cols:
+        # limpa strings comuns
+        data[col] = (
+            data[col]
+            .astype(str)
+            .str.strip()
+            .replace({"": None, "None": None, "nan": None, "NaN": None})
+        )
+
+        # converte
+        data[col] = pd.to_numeric(data[col], errors="coerce")
+
+        # log de valores absurdos antes de limpar
+        absurdos = data[data[col].notna() & (data[col].abs() > pg_int_max)]
+        if not absurdos.empty:
+            print(f"\n[WARN] Valores fora do range INT na coluna {col}:")
+            print(absurdos[["Data", "Turma", col]].head(20).to_string(index=False))
+
+        # valores negativos ou absurdos viram nulos
+        data.loc[data[col].notna() & (data[col] < 0), col] = None
+        data.loc[data[col].notna() & (data[col].abs() > pg_int_max), col] = None
+
+        # inteiros finais
+        data[col] = data[col].apply(lambda x: None if pd.isna(x) else int(x))
+
+    # descarta linhas sem turma
+    data = data[data["Turma"].notna()].copy()
+
+    # mapeamento final
     data.rename(columns={
         "Data": "data_aula",
         "Turma": "turma",
@@ -427,9 +468,6 @@ def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     }, inplace=True)
 
     data["data_aula"] = data["data_aula"].dt.date
-
-    for col in ["vagas", "integrantes", "trancados", "nao_frequente", "frequente"]:
-        data[col] = data[col].apply(lambda x: None if pd.isna(x) else int(x))
 
     data = data.drop_duplicates(subset=["data_aula", "turma"], keep="last").reset_index(drop=True)
 
@@ -478,11 +516,20 @@ def upsert_dataframe(conn, df: pd.DataFrame) -> int:
     ;
     '''
 
-    with conn.cursor() as cur:
-        execute_values(cur, sql, rows, page_size=500)
+    try:
+        with conn.cursor() as cur:
+            execute_values(cur, sql, rows, page_size=500)
+        conn.commit()
+        return len(rows)
 
-    conn.commit()
-    return len(rows)
+    except Exception as e:
+        conn.rollback()
+
+        print("\n[DEBUG] Amostra de linhas que seriam enviadas:")
+        for i, row in enumerate(rows[:10], start=1):
+            print(f"{i}: {row}")
+
+        raise
 
 
 # =======================
