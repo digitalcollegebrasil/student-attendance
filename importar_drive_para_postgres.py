@@ -471,6 +471,12 @@ def normalize_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     data = data.drop_duplicates(subset=["data_aula", "turma"], keep="last").reset_index(drop=True)
 
+    print("\n[DEBUG] Maiores valores por coluna numerica:")
+    for col in ["vagas", "integrantes", "trancados", "nao_frequente", "frequente"]:
+        serie = pd.to_numeric(data[col], errors="coerce")
+        if serie.notna().any():
+            print(f"{col}: min={serie.min()} max={serie.max()}")
+
     return data
 
 
@@ -522,12 +528,22 @@ def upsert_dataframe(conn, df: pd.DataFrame) -> int:
         conn.commit()
         return len(rows)
 
-    except Exception as e:
+    except Exception:
         conn.rollback()
+        print("\n[DEBUG] Falhou em lote. Procurando linha exata...\n")
 
-        print("\n[DEBUG] Amostra de linhas que seriam enviadas:")
-        for i, row in enumerate(rows[:10], start=1):
-            print(f"{i}: {row}")
+        for i, row in enumerate(rows, start=1):
+            try:
+                with conn.cursor() as cur:
+                    execute_values(cur, sql, [row], page_size=1)
+                conn.commit()
+            except Exception as row_error:
+                conn.rollback()
+                print(f"[ERRO] Linha com problema: #{i}")
+                print(row)
+                print(f"Tipo do erro: {type(row_error).__name__}")
+                print(f"Mensagem: {row_error}")
+                raise
 
         raise
 
