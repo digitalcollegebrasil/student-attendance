@@ -714,14 +714,58 @@ def move_downloaded_file_unique(downloaded_path: str, target_dir: str, current_d
 # LOGICA DE NEGOCIO
 # =======================
 
+def delete_turmas_invalidas_postgres():
+    step("Removendo turmas invalidas do PostgreSQL", None)
+
+    sql = f'''
+    DELETE FROM "{DB_SCHEMA}"."{DB_TABLE}"
+    WHERE
+        turma ILIKE 'GT%%'
+        OR (
+            LENGTH(TRIM(turma)) >= 3
+            AND SUBSTRING(UPPER(TRIM(turma)) FROM 3 FOR 1) = 'L'
+        );
+    '''
+
+    conn = None
+    try:
+        conn = get_db_connection()
+        with conn.cursor() as cur:
+            cur.execute(sql)
+            deleted = cur.rowcount
+        conn.commit()
+        print(f"Remocao concluida no PostgreSQL: {deleted} registro(s) excluido(s).")
+    except Exception:
+        if conn:
+            conn.rollback()
+        raise
+    finally:
+        if conn:
+            conn.close()
+
 def processar_turma(nome_turma: str | None):
     if not isinstance(nome_turma, str):
         return None
+
+    nome_norm = nome_turma.strip()
+    nome_lower = nome_norm.lower()
+
     turmas_ignoradas = ["aulas diversas", "aulas diversas 2", "aulas diversas gt"]
-    nome_norm = nome_turma.lower().strip()
-    if any(turma in nome_norm for turma in turmas_ignoradas):
+    if any(turma in nome_lower for turma in turmas_ignoradas):
         print(f"Turma ignorada: {nome_turma}")
         return None
+
+    # Remove turmas que comecem com GT
+    if nome_norm.upper().startswith("GT"):
+        print(f"Turma ignorada (comeca com GT): {nome_turma}")
+        return None
+
+    # Remove turmas cuja terceira letra seja L (online)
+    # Ex.: FSL...
+    if len(nome_norm) >= 3 and nome_norm[2].upper() == "L":
+        print(f"Turma ignorada (3a letra = L): {nome_turma}")
+        return None
+
     return nome_turma
 
 
@@ -1500,7 +1544,10 @@ def postgres_sync_frequencia(input_file: str):
     step("Iniciando sync com PostgreSQL (lendo Excel consolidado)", None)
     df = pd.read_excel(input_file)
     df.columns = [c.strip() for c in df.columns]
+
     upsert_frequencia_postgres(df)
+    delete_turmas_invalidas_postgres()
+
     step("Sincronizacao PostgreSQL concluida", None)
 
 
